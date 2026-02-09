@@ -10,11 +10,13 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Ports and app paths (ROOT = folder containing main_ui.py)
 ROOT = Path(__file__).resolve().parent
 PORT_STORE_OPENING = 8502
 PORT_MALL_DASHBOARD = 8503
+PORT_MAP_DASHBOARD = 8504
 
 APPS = [
     {
@@ -24,6 +26,7 @@ APPS = [
         "port": PORT_STORE_OPENING,
         "cwd": ROOT / "googlesearch",
         "script": "app_streamlit.py",
+        "button_text": "Click to Application"
     },
     {
         "key": "mall_dashboard",
@@ -32,6 +35,16 @@ APPS = [
         "port": PORT_MALL_DASHBOARD,
         "cwd": ROOT / "Mall_Ai_Dashboard",
         "script": "app.py",
+        "button_text": "Click to Application"
+    },
+    {
+        "key": "map_dashboard",
+        "title": "Map Visual Analysis",
+        "desc": "Analyze mall map screenshots with OCR and SBERT. Match with database and visualize missing tenants on the map.",
+        "port": PORT_MAP_DASHBOARD,
+        "cwd": ROOT / "Map scrapping",
+        "script": "mall_analysis_app.py",
+        "button_text": "Click to Application"
     },
 ]
 
@@ -75,50 +88,62 @@ st.markdown("""
 .dashboard-subtitle { color: #64748b; font-size: 1rem; margin: 0; font-weight: 500; }
 
 /* Cards: same height, flex layout */
+/* Cards: vertical layout with full-width button */
 .project-card {
-    height: 280px;
+    height: auto;
     display: flex;
     flex-direction: column;
+    gap: 1.5rem;
     background: linear-gradient(165deg, rgba(30,41,59,0.85) 0%, rgba(15,23,42,0.95) 100%);
-    padding: 1.75rem;
-    border-radius: 16px;
+    padding: 2.25rem;
+    border-radius: 20px;
     border: 1px solid rgba(148,163,184,0.12);
     box-shadow: 0 4px 24px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.03) inset;
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    margin-bottom: 2rem;
 }
 .project-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 12px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(14,165,233,0.15);
     border-color: rgba(14,165,233,0.2);
 }
-.project-card-title { font-size: 1.2rem; font-weight: 700; color: #f1f5f9; margin: 0 0 0.75rem 0; line-height: 1.3; }
+.project-card-info {
+    width: 100%;
+}
+.project-card-title { font-size: 1.6rem; font-weight: 800; color: #f1f5f9; margin: 0 0 0.75rem 0; line-height: 1.2; }
 .project-card-desc {
-    flex: 1;
     color: #94a3b8;
-    font-size: 0.9rem;
-    line-height: 1.5;
-    margin: 0 0 1.25rem 0;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    -webkit-box-orient: vertical;
+    font-size: 1.05rem;
+    line-height: 1.6;
+    margin: 0;
+}
+.project-card-cta-container {
+    width: 100%;
+    margin-top: 0.5rem;
 }
 .project-card-cta {
     display: flex;
+    width: 100%;
     align-items: center;
     justify-content: center;
-    margin-top: auto;
-    padding: 0.75rem 1.25rem;
+    padding: 1.5rem;
     background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
     color: white !important;
-    border-radius: 10px;
+    border-radius: 14px;
     text-decoration: none;
-    font-weight: 600;
-    font-size: 0.95rem;
-    transition: opacity 0.2s, transform 0.2s;
-    box-shadow: 0 2px 12px rgba(14,165,233,0.35);
+    font-weight: 800;
+    font-size: 1.4rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 6px 20px rgba(14,165,233,0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
-.project-card-cta:hover { opacity: 0.95; transform: scale(1.02); color: white !important; }
+.project-card-cta:hover { 
+    opacity: 0.95; 
+    transform: scale(1.02); 
+    box-shadow: 0 8px 30px rgba(14,165,233,0.5);
+    color: white !important; 
+}
 
 /* Footer */
 .dashboard-footer { margin-top: 2.5rem; padding-top: 1.25rem; border-top: 1px solid rgba(148,163,184,0.1); color: #64748b; font-size: 0.85rem; }
@@ -128,27 +153,30 @@ st.markdown("""
 st.markdown("""
 <div class='dashboard-header'>
     <h1 class='dashboard-title'>Combined Dashboard</h1>
-    <p class='dashboard-subtitle'>Click a card to open the app in a new tab</p>
+    <p class='dashboard-subtitle'>Access all your mall analysis tools from one place</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Equal-height cards: fixed height + flex so button stays at bottom
-cols = st.columns(2)
-for idx, app in enumerate(APPS):
+# Vertical list of cards
+for app in APPS:
     url = f"http://localhost:{app['port']}"
-    with cols[idx]:
-        st.markdown(
-            f"""
-            <div class='project-card'>
+    st.markdown(
+        f"""
+        <div class='project-card'>
+            <div class='project-card-info'>
                 <div class='project-card-title'>{app['title']}</div>
                 <div class='project-card-desc'>{app['desc']}</div>
-                <a href='{url}' target='_blank' rel='noopener noreferrer' class='project-card-cta'>Open in new tab →</a>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            <div class='project-card-cta-container'>
+                <a href='{url}' target='_blank' rel='noopener noreferrer' class='project-card-cta'>{app['button_text']}</a>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 st.markdown(
     '<p class="dashboard-footer">Apps start automatically when you open this page. If a tab shows "can\'t connect", wait a few seconds and click the link again.</p>',
     unsafe_allow_html=True,
 )
+
