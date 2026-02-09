@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import streamlit as st
 from pipeline import run_pipeline, run_pipeline_gemini_only
 
-st.set_page_config(page_title="Store Opening Discovery", layout="wide")
+st.set_page_config(page_title="Store Opening Discovery", page_icon="🔍", layout="wide")
 st.title("Retail Store Opening Discovery")
 st.caption("Get current 2026 data · Uses OpenAI for AI analysis")
 

@@ -295,7 +295,7 @@ def clean_hours_helper(val):
     return str(val) if val else "Not available"
 
 def main():
-    st.set_page_config(layout="wide", page_title="Mall Tenant Intelligence", page_icon="🛍️")
+    st.set_page_config(layout="wide", page_title="Mall Tenant Intelligence", page_icon="🗺️")
     
     # Custom CSS for better aesthetics and scrolling
     st.markdown("""

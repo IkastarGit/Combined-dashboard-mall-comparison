@@ -11,7 +11,7 @@ from facebook_scraper import scrape_facebook_simple
 from instagram import scrape_instagram_simple
 from excel_exporter import create_mall_excel_export
 
-st.set_page_config(page_title="Mall AI Dashboard", layout="wide")
+st.set_page_config(page_title="Mall AI Dashboard", page_icon="🏬", layout="wide")
 
 # --- Custom styling for a cleaner, more attractive UI ---
 st.markdown("""

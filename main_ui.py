@@ -14,6 +14,14 @@ import streamlit.components.v1 as components
 
 # Ports and app paths (ROOT = folder containing main_ui.py)
 ROOT = Path(__file__).resolve().parent
+
+# Prefer project .venv Python so all sub-apps use same env
+def _python_executable():
+    venv_exe = ROOT / ".venv" / "Scripts" / "python.exe" if sys.platform == "win32" else ROOT / ".venv" / "bin" / "python"
+    if venv_exe.exists():
+        return str(venv_exe)
+    return sys.executable
+
 PORT_STORE_OPENING = 8502
 PORT_MALL_DASHBOARD = 8503
 PORT_MAP_DASHBOARD = 8504
@@ -21,6 +29,7 @@ PORT_MAP_DASHBOARD = 8504
 APPS = [
     {
         "key": "store_opening",
+        "icon": "🔍",
         "title": "Store Opening Discovery",
         "desc": "Search web for mall/store opening data, extract and analyze with AI. Get 2026 tenant and event info.",
         "port": PORT_STORE_OPENING,
@@ -30,6 +39,7 @@ APPS = [
     },
     {
         "key": "mall_dashboard",
+        "icon": "🏬",
         "title": "Mall AI Dashboard",
         "desc": "Scrape mall directories, compare with old data, run Facebook/Instagram scrapers, and generate AI insights.",
         "port": PORT_MALL_DASHBOARD,
@@ -39,6 +49,7 @@ APPS = [
     },
     {
         "key": "map_dashboard",
+        "icon": "🗺️",
         "title": "Map Visual Analysis",
         "desc": "Analyze mall map screenshots with OCR and SBERT. Match with database and visualize missing tenants on the map.",
         "port": PORT_MAP_DASHBOARD,
@@ -62,7 +73,7 @@ def start_app(cwd: Path, script: str, port: int) -> bool:
     if not app_path.exists():
         return False
     subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", str(app_path), "--server.port", str(port), "--server.headless", "true"],
+        [_python_executable(), "-m", "streamlit", "run", str(app_path), "--server.port", str(port), "--server.headless", "true"],
         cwd=str(cwd),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -70,7 +81,7 @@ def start_app(cwd: Path, script: str, port: int) -> bool:
     return True
 
 
-st.set_page_config(page_title="Combined Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Combined Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # Start both apps on first load (once per session) so links open immediately with no popup blocking
 if "apps_started" not in st.session_state:
@@ -164,7 +175,7 @@ for app in APPS:
         f"""
         <div class='project-card'>
             <div class='project-card-info'>
-                <div class='project-card-title'>{app['title']}</div>
+                <div class='project-card-title'>{app['icon']} {app['title']}</div>
                 <div class='project-card-desc'>{app['desc']}</div>
             </div>
             <div class='project-card-cta-container'>
