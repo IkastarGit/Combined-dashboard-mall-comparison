@@ -3,10 +3,25 @@ import requests
 import json
 import re
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env BEFORE reading them
+# Load environment variables from .env BEFORE reading them.
+# 1) Default search (current working dir and parents)
 load_dotenv()
+
+# 2) Also try the googlesearch/.env file at the project root so that
+#    Mall_Ai_Dashboard can reuse the same OpenAI settings even when
+#    it is run from a different working directory (e.g. via main_ui.py).
+try:
+    project_root = Path(__file__).resolve().parents[1]
+    google_env = project_root / "googlesearch" / ".env"
+    if google_env.exists():
+        # Do not override variables that are already set in the environment.
+        load_dotenv(dotenv_path=google_env, override=False)
+except Exception:
+    # Best‑effort only; failures here should not break the app.
+    pass
 
 # OpenAI API configuration (replaces Google Gemini)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
@@ -122,12 +137,28 @@ Text from website:
 
 INSTRUCTIONS:
 1. Carefully read through the entire text.
-2. Identify ALL shop/store/retailer/business names mentioned.
-3. For each shop, try to find associated information (phone, floor, image URL) if mentioned nearby.
-4. Extract shop names even if they appear in lists, cards, or different formats.
-5. Look for patterns like: "Store Name", "Shop Name", retailer names, brand names, business names.
-6. Skip navigation/UI text like: Home, About, Contact, Search, Sign In, Menu, Cart, See More, Learn More, Shop, Store, Terms, Privacy, Cookie, Careers, Leasing, Company, Corporate.
-7. Remove duplicates (same shop name should appear only once).
+2. Identify ALL shop/store/retailer/business names mentioned anywhere on the page.
+3. Pay SPECIAL attention to sections with headings like:
+   - "Current Tenants"
+   - "Tenants"
+   - "Tenant Roster"
+   - "Store Directory"
+   - "Retailers"
+   These sections usually contain the official list of all current tenants.
+4. In those sections, rows often have the pattern:
+   - "<unit code or number>  <Shop Name>  <area or square footage>"
+   Example: "01    Kroger    69,133"
+   Example: "FS5-2    Buffalo Wings & Rings    4,000"
+   From such rows you MUST extract ONLY the shop/business name in the middle ("Kroger", "Buffalo Wings & Rings") as a tenant, and ignore the unit code and the area/square footage.
+5. For each shop, try to find associated information (phone, floor, image URL) if mentioned nearby.
+6. Extract shop names even if they appear in:
+   - bullet lists
+   - cards or tiles
+   - tables with codes and sizes
+   - headings or inline text
+7. Look for patterns like: "Store Name", "Shop Name", retailer names, brand names, business names.
+8. Skip navigation/UI text like: Home, About, Contact, Search, Sign In, Menu, Cart, See More, Learn More, Shop, Store, Terms, Privacy, Cookie, Careers, Leasing, Company, Corporate.
+9. Remove duplicates (same shop name should appear only once, even if it appears in multiple places or both in text and in a "Current Tenants" table).
 
 OUTPUT FORMAT (PLAIN TEXT ONLY):
 - Return ONLY plain text (no JSON, no markdown, no code blocks).
@@ -165,7 +196,8 @@ CRITICAL:
         return []
 
     try:
-        # Parse plain-text pipe-separated lines into shop dicts
+        # Parse plain-text pipe-separated lines into shop dicts.
+        # IMPORTANT: do NOT remove duplicates – return exactly what the AI extracted.
         shops = []
         lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
         for line in lines:
@@ -190,16 +222,8 @@ CRITICAL:
                 "image_url": image_url,
             })
         
-        # Remove duplicates based on shop_name (case-insensitive)
-        seen = set()
-        unique_shops = []
-        for shop in shops:
-            name_key = shop["shop_name"].lower()
-            if name_key not in seen:
-                seen.add(name_key)
-                unique_shops.append(shop)
-        
-        return unique_shops
+        # Return raw list with possible duplicates, as requested.
+        return shops
 
     except Exception as e:
         print(f"Warning: Error extracting shops from text using LLM: {str(e)}")

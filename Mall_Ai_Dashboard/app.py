@@ -214,10 +214,11 @@ if scrape_use_btn:
                         for i, url in enumerate(website_urls, 1):
                             st.write(f"🌐 Scraping website ({i}/{len(website_urls)}): {url}")
                             try:
-                                df_web = scrape_and_prepare(url=url, source="Website Data")
+                                df_web, raw_count = scrape_and_prepare(url=url, source="Website Data")
                                 if df_web is not None and not df_web.empty:
                                     combined_data.append(df_web)
-                                    st.success(f"✅ Scraped {len(df_web)} items from website")
+                                    # Use raw_count so this matches the OpenAI extracted count in logs
+                                    st.success(f"✅ Scraped {raw_count} items from website")
                                 
                                 # Check if extracted text file was created
                                 import os
@@ -474,10 +475,11 @@ if links_file and scrape_links_btn:
                         for i, u in enumerate(website_urls, 1):
                             st.write(f"🌐 Scraping website ({i}/{len(website_urls)}): {u}")
                             try:
-                                dfc = scrape_and_prepare(url=u, source="Website Data")
+                                dfc, raw_count = scrape_and_prepare(url=u, source="Website Data")
                                 if dfc is not None and not dfc.empty:
                                     combined.append(dfc)
-                                    st.success(f"✅ Scraped {len(dfc)} items from website")
+                                    # Use raw_count so this matches the OpenAI extracted count in logs
+                                    st.success(f"✅ Scraped {raw_count} items from website")
                             except Exception as e:
                                 st.warning(f"❌ Failed scraping website {u}: {e}")
 

@@ -10,7 +10,12 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config import EXTRACTED_OUTPUT_DIR, STRUCTURED_OUTPUT_DIR
+from config import (
+    EXTRACTED_OUTPUT_DIR,
+    OFFICIAL_SITE_LOAD_SLEEP,
+    SELENIUM_FALLBACK_SLEEP,
+    STRUCTURED_OUTPUT_DIR,
+)
 
 from ai_analysis import AI_AVAILABLE, AI_SOURCE_NAME, analyze_extracted_text, extract_combined, generate_mall_intel
 from extract_text import extract_clean_text, extract_text_from_url
@@ -198,7 +203,7 @@ def run_pipeline(
                     if not text:
                         try:
                             driver.get(off_url)
-                            time.sleep(1)
+                            time.sleep(OFFICIAL_SITE_LOAD_SLEEP)
                             text = extract_clean_text(driver.page_source or "")
                         except Exception as e:
                             print(f"[Step 1b] Could not load official site: {e}")
@@ -242,12 +247,7 @@ def run_pipeline(
             print(f"  Query '{q[:50]}...' -> {len(results)} result(s)")
             # Extract Google AI Overview / AI mode text from current search page (waits for async load)
             try:
-                ai_data = extract_ai_overview(
-                    driver,
-                    expand_first=True,
-                    wait_after_load=2.5,
-                    initial_wait=5.0,  # AI Overview loads asynchronously; wait for it
-                )
+                ai_data = extract_ai_overview(driver, expand_first=True)
                 ai_text = (ai_data.get("text") or "").strip()
                 if ai_text:
                     ai_overview_sources.append({
@@ -328,7 +328,7 @@ def run_pipeline(
                 print(f"      Requests empty -> trying Selenium fallback...")
                 try:
                     driver.get(link)
-                    time.sleep(2)
+                    time.sleep(SELENIUM_FALLBACK_SLEEP)
                     text = extract_clean_text(driver.page_source or "")
                 except Exception as e:
                     print(f"      Selenium fallback failed: {e}")

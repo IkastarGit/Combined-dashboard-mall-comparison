@@ -6,7 +6,9 @@ from dotenv import load_dotenv
 load_dotenv()  # Load .env file if present
 
 # --- Chrome / Selenium ---
-CHROME_HEADLESS = True
+# Google detects headless Chrome and often withholds AI Overview content (the main data source).
+# Set False for reliable results; True only works when Google doesn't block headless.
+CHROME_HEADLESS = False
 CHROME_WINDOW_SIZE = "1920,1080"
 CHROME_PAGE_LOAD_TIMEOUT = 30  # Increased for slow pages (e.g. Instagram)
 CHROME_IMPLICIT_WAIT = 5
@@ -14,7 +16,16 @@ CHROME_IMPLICIT_WAIT = 5
 # --- Google Search ---
 GOOGLE_SEARCH_URL = "https://www.google.com/search"
 MAX_RESULTS_PER_QUERY = 20
-SCROLL_PAUSE_SECONDS = 1.5
+SCROLL_PAUSE_SECONDS = 0.8  # After page load; kept low but enough for DOM to settle
+
+# --- Scraping delays (reduced for speed; increase if data is missed) ---
+SEARCH_CONSENT_SLEEP = 0.5       # After clicking Accept cookies
+AI_OVERVIEW_INITIAL_WAIT = 3.0   # AI Overview loads async; 3s usually enough
+AI_OVERVIEW_WAIT_AFTER_EXPAND = 1.2  # After "Show more" / "Dive deeper"
+AI_OVERVIEW_SCROLL_SLEEP = 0.2   # After scroll to top for lazy load
+AI_OVERVIEW_CLICK_SLEEP = 0.2    # Before/after expand button click
+OFFICIAL_SITE_LOAD_SLEEP = 0.7   # After loading official mall site via Selenium
+SELENIUM_FALLBACK_SLEEP = 1.2    # When requests fails and Selenium fetches page
 
 # --- AI API (store-opening analysis) ---
 # Use OpenAI if OPENAI_API_KEY is set; otherwise fall back to Gemini

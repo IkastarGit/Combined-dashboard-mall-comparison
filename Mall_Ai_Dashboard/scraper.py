@@ -7,6 +7,13 @@ import argparse
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
+# Use lxml if available (faster), else built-in html.parser
+try:
+    import lxml
+    _BS_PARSER = "lxml"
+except ImportError:
+    _BS_PARSER = "html.parser"
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -1068,7 +1075,7 @@ def scrape_html_and_extract_text(url, headless: bool = HEADLESS, wait_seconds: f
         
         # Get page source and parse with BeautifulSoup
         html = driver.page_source
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, _BS_PARSER)
         
         # Enhanced HTML cleaning - Remove noise elements
         # Remove script, style, and metadata elements
@@ -1257,7 +1264,7 @@ def scrape_url(url, output_csv: str = DEFAULT_OUTPUT_CSV, output_text: str = DEF
             
             # Clean HTML using BeautifulSoup - remove only obvious non-content elements
             print("Cleaning HTML with BeautifulSoup...")
-            soup = BeautifulSoup(html, "lxml")
+            soup = BeautifulSoup(html, _BS_PARSER)
             
             # Remove script and style elements
             for script in soup(["script", "style", "noscript", "meta", "link"]):
@@ -1374,7 +1381,7 @@ def scrape_url(url, output_csv: str = DEFAULT_OUTPUT_CSV, output_text: str = DEF
             print(f"Finished scrolling after {scroll_attempts} attempts")
 
             html = driver.page_source
-            soup = BeautifulSoup(html, "lxml")
+            soup = BeautifulSoup(html, _BS_PARSER)
             
             # Check if this page has alphabetical listing structure
             if detect_alphabetical_listing_page(soup):
@@ -1435,7 +1442,7 @@ def scrape_url(url, output_csv: str = DEFAULT_OUTPUT_CSV, output_text: str = DEF
                                     time.sleep(0.5)
                                 
                                 category_html = driver.page_source
-                                category_soup = BeautifulSoup(category_html, "lxml")
+                                category_soup = BeautifulSoup(category_html, _BS_PARSER)
                                 
                                 # Extract shops from category page
                                 category_shops = extract_shops_from_soup(category_soup, is_category_page=True)
@@ -1471,7 +1478,7 @@ def scrape_url(url, output_csv: str = DEFAULT_OUTPUT_CSV, output_text: str = DEF
                                 time.sleep(1)
                             
                             category_html = driver.page_source
-                            category_soup = BeautifulSoup(category_html, "lxml")
+                            category_soup = BeautifulSoup(category_html, _BS_PARSER)
                             
                             # Extract shops from category page
                             category_shops = extract_shops_from_soup(category_soup, is_category_page=True)

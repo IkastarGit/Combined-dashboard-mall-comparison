@@ -61,33 +61,73 @@ APPS = [
 
 
 def is_port_in_use(port: int) -> bool:
+    """Return True if something is already listening on this port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def start_app(cwd: Path, script: str, port: int) -> bool:
-    """Start Streamlit app in background. Returns True if started or already running."""
-    if is_port_in_use(port):
-        return True
+def _find_free_port(start_port: int, max_tries: int = 20) -> int:
+    """
+    Find a free TCP port, starting at start_port and scanning upward.
+    Returns the first available port, or start_port if none found within range.
+    """
+    port = start_port
+    for _ in range(max_tries):
+        if not is_port_in_use(port):
+            return port
+        port += 1
+    # Fallback: return the original requested port (may still be in use)
+    return start_port
+
+
+def start_app(cwd: Path, script: str, preferred_port: int) -> int:
+    """
+    Start a Streamlit app in the background and return the actual port used.
+
+    - We always try to start a *fresh* process so you don't accidentally
+      reuse a stale server from an earlier run with old code.
+    - If the preferred port is already in use, we scan upwards to find
+      the next free port and use that.
+    - stdout/stderr are inherited so each sub‑app's logs show in the same
+      terminal where you run `streamlit run main_ui.py`.
+    """
     app_path = cwd / script
     if not app_path.exists():
-        return False
+        # Could optionally show a Streamlit warning here, but simply return.
+        return preferred_port
+
+    actual_port = _find_free_port(preferred_port)
+
     subprocess.Popen(
-        [_python_executable(), "-m", "streamlit", "run", str(app_path), "--server.port", str(port), "--server.headless", "true"],
+        [
+            _python_executable(),
+            "-m",
+            "streamlit",
+            "run",
+            str(app_path),
+            "--server.port",
+            str(actual_port),
+            "--server.headless",
+            "true",
+        ],
         cwd=str(cwd),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        # Inherit stdout/stderr so logs appear in the main terminal
+        stdout=None,
+        stderr=None,
     )
-    return True
+    return actual_port
 
 
 st.set_page_config(page_title="Combined Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
-# Start both apps on first load (once per session) so links open immediately with no popup blocking
-if "apps_started" not in st.session_state:
-    st.session_state.apps_started = True
+# Start apps on first load (once per browser session) so links open immediately.
+# We also remember the *actual* port each app was started on, since we may have
+# to move to a different free port if the preferred one is already in use.
+if "app_ports" not in st.session_state:
+    st.session_state.app_ports = {}
     for app in APPS:
-        start_app(app["cwd"], app["script"], app["port"])
+        actual_port = start_app(app["cwd"], app["script"], app["port"])
+        st.session_state.app_ports[app["key"]] = actual_port
 
 st.markdown("""
 <style>
@@ -170,7 +210,9 @@ st.markdown("""
 
 # Vertical list of cards
 for app in APPS:
-    url = f"http://localhost:{app['port']}"
+    # Use the dynamically assigned port for each app (falls back to preferred)
+    actual_port = st.session_state.app_ports.get(app["key"], app["port"])
+    url = f"http://localhost:{actual_port}"
     st.markdown(
         f"""
         <div class='project-card'>

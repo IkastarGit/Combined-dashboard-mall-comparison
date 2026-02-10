@@ -21,6 +21,10 @@ except ImportError:
     USE_WEBDRIVER_MANAGER = False
 
 from config import (
+    AI_OVERVIEW_CLICK_SLEEP,
+    AI_OVERVIEW_SCROLL_SLEEP,
+    AI_OVERVIEW_INITIAL_WAIT,
+    AI_OVERVIEW_WAIT_AFTER_EXPAND,
     CHROME_HEADLESS,
     CHROME_IMPLICIT_WAIT,
     CHROME_PAGE_LOAD_TIMEOUT,
@@ -28,6 +32,14 @@ from config import (
     GOOGLE_SEARCH_URL,
     MAX_RESULTS_PER_QUERY,
     SCROLL_PAUSE_SECONDS,
+    SEARCH_CONSENT_SLEEP,
+)
+
+
+# Realistic Chrome user agent (used when headless to reduce detection)
+_CHROME_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
 
@@ -38,8 +50,10 @@ def get_chrome_options(headless: Optional[bool] = None) -> Options:
     - Removes "Chrome is being controlled by automated test software" banner
     - Disables automation extension flag
     - Reduces detection via blink features
+    - In headless mode: overrides user-agent (Google detects HeadlessChrome otherwise)
     """
     opts = Options()
+    use_headless = headless if headless is not None else CHROME_HEADLESS
 
     # Hide "Chrome is being controlled by automated test software"
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -55,8 +69,10 @@ def get_chrome_options(headless: Optional[bool] = None) -> Options:
     opts.add_argument("--disable-extensions")
     opts.add_argument("--disable-notifications")
 
-    if headless if headless is not None else CHROME_HEADLESS:
+    if use_headless:
         opts.add_argument("--headless=new")
+        # Google detects "HeadlessChrome" in user-agent and withholds AI Overview
+        opts.add_argument("--user-agent=" + _CHROME_USER_AGENT)
 
     return opts
 
@@ -74,7 +90,7 @@ def create_driver(headless: Optional[bool] = None) -> webdriver.Chrome:
     driver.set_page_load_timeout(CHROME_PAGE_LOAD_TIMEOUT)
     driver.implicitly_wait(CHROME_IMPLICIT_WAIT)
 
-    # Override navigator.webdriver in JS (optional, extra stealth)
+    # Override navigator.webdriver (sites check this to detect automation)
     driver.execute_cdp_cmd(
         "Page.addScriptToEvaluateOnNewDocument",
         {
@@ -126,7 +142,7 @@ def search_google(
             )
             if consent_btn:
                 consent_btn[0].click()
-                time.sleep(1)
+                time.sleep(SEARCH_CONSENT_SLEEP)
         except Exception:
             pass
 
@@ -297,8 +313,8 @@ AI_OVERVIEW_EXPAND_TEXTS = ("Show more", "Show More", "Dive deeper", "Dive Deepe
 def extract_ai_overview(
     driver: webdriver.Chrome,
     expand_first: bool = True,
-    wait_after_load: float = 2.0,
-    initial_wait: float = 5.0,
+    wait_after_load: float = AI_OVERVIEW_WAIT_AFTER_EXPAND,
+    initial_wait: float = AI_OVERVIEW_INITIAL_WAIT,
 ) -> dict:
     """
     Extract text from Google's AI Overview / AI mode on the current search results page.
@@ -320,7 +336,7 @@ def extract_ai_overview(
         # Scroll to top so AI Overview is in view (can help with lazy loading)
         try:
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(0.5)
+            time.sleep(AI_OVERVIEW_SCROLL_SLEEP)
         except Exception:
             pass
 
@@ -336,7 +352,7 @@ def extract_ai_overview(
                         try:
                             if e.is_displayed() and e.is_enabled():
                                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", e)
-                                time.sleep(0.3)
+                                time.sleep(AI_OVERVIEW_CLICK_SLEEP)
                                 e.click()
                                 time.sleep(wait_after_load)
                                 break

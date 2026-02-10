@@ -1,12 +1,16 @@
 from scraper import scrape_url
-from cleaner import clean_raw_text
+from cleaner import clean_raw_text  # kept for compatibility, not used below
 import pandas as pd
 
 
 def scrape_and_prepare(url: str, source: str = "Official Website"):
-    """Scrape `url` and return a cleaned pandas DataFrame (no files written to disk).
+    """Scrape `url` and return a pandas DataFrame built DIRECTLY from AI-extracted shops
+    (no de-duplication), plus the raw extracted count.
 
-    This keeps the flow unchanged externally but returns in-memory cleaned results.
+    This bypasses the legacy text cleaner so you get exactly what the AI extracted.
+
+    Returns:
+        tuple[pd.DataFrame, int]: (df_with_possible_duplicates, raw_extracted_count)
     """
     if not url:
         raise ValueError("url is required for scraping")
@@ -17,20 +21,25 @@ def scrape_and_prepare(url: str, source: str = "Official Website"):
     except Exception as scrape_err:
         raise Exception(f"Failed to scrape URL {url}: {str(scrape_err)}") from scrape_err
 
-    # Clean the labeled text in-memory and return DataFrame
-    try:
-        df = clean_raw_text(labeled_text)
-    except Exception as clean_err:
-        # Log the error but still return empty DataFrame rather than failing completely
-        print(f"Warning: Failed to clean scraped text from {url}: {str(clean_err)}")
-        df = pd.DataFrame(columns=["shop_name", "phone", "floor"])
-    
-    # Add source column if DataFrame is not empty
-    if not df.empty:
-        df['source'] = source
-    else:
-        # Create empty DataFrame with source column
-        df = pd.DataFrame(columns=["shop_name", "phone", "floor", "source"])
-        df['source'] = None
+    # Raw count before ANY extra processing
+    raw_count = len(shops) if shops is not None else 0
 
-    return df
+    # Build DataFrame directly from AI-extracted shops, preserving duplicates.
+    if shops:
+        df = pd.DataFrame(shops)
+        # Ensure expected columns exist
+        for col in ["shop_name", "phone", "floor"]:
+            if col not in df.columns:
+                df[col] = ""
+        df = df[["shop_name", "phone", "floor"]]
+    else:
+        df = pd.DataFrame(columns=["shop_name", "phone", "floor"])
+
+    # Add source column
+    if not df.empty:
+        df["source"] = source
+    else:
+        df = pd.DataFrame(columns=["shop_name", "phone", "floor", "source"])
+        df["source"] = None
+
+    return df, raw_count
