@@ -4,6 +4,7 @@ import requests
 from PIL import Image, ImageOps, ImageEnhance
 import numpy as np
 import os
+from pathlib import Path
 import easyocr
 from sentence_transformers import SentenceTransformer, util
 import pandas as pd
@@ -29,6 +30,20 @@ IMAGES_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "mall_analysis_r
 
 if not os.path.exists(IMAGES_DIR):
     os.makedirs(IMAGES_DIR, exist_ok=True)
+
+
+def _load_shared_map_url() -> str:
+    """If main dashboard submitted data, pre-fill the Mall Map URL."""
+    shared = Path(__file__).resolve().parent.parent / "shared_dashboard_input.json"
+    if not shared.exists():
+        return ""
+    try:
+        with open(shared, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return (data.get("map_visual_url") or "").strip()
+    except Exception:
+        return ""
+
 
 @st.cache_resource
 def load_models():
@@ -331,7 +346,8 @@ def main():
         # Expand Data Sourcing if no data exists
         show_sourcing = st.session_state.tenants is None
         with st.expander("1. Data Sourcing", expanded=show_sourcing):
-            mall_url = st.text_input("Mall Map URL", "", placeholder="https://www.simon.com/mall/midland-park-mall/map/#/")
+            _prefilled_map_url = _load_shared_map_url()
+            mall_url = st.text_input("Mall Map URL", value=_prefilled_map_url, placeholder="https://www.simon.com/mall/midland-park-mall/map/#/")
             
             sc_col1, sc_col2 = st.columns(2)
             with sc_col1:

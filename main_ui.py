@@ -88,6 +88,7 @@ def load_shared_input() -> dict:
         "mall_instagram_link": "",
         "hashtags_youtube_twitter": "",
         "googlesearch_query": "",
+        "map_visual_url": "",
     }
     if not SHARED_INPUT_FILE.exists():
         return default
@@ -265,8 +266,8 @@ st.markdown("""
 # Load existing shared input for pre-fill
 _prev = load_shared_input()
 
-with st.expander("📝 Mall & search inputs (optional — submit to pre-fill Store Opening Discovery & Mall AI Dashboard)", expanded=True):
-    st.markdown("Provide mall details and search query below. After **Submit**, open Store Opening Discovery or Mall AI Dashboard to use this data. If you leave fields empty, those apps run as usual and you can enter data there.")
+with st.expander("📝 Mall & search inputs (optional — submit to pre-fill all three apps)", expanded=True):
+    st.markdown("Provide mall details and URLs below. After **Submit**, open Store Opening Discovery, Mall AI Dashboard, or Map Visual Analysis to use this data. If you leave fields empty, those apps run as usual and you can enter data there.")
     with st.form("shared_input_form"):
         mall_name = st.text_input("Mall Name", value=_prev.get("mall_name", ""), placeholder="e.g. Westfield Southcenter")
         address = st.text_input("Address", value=_prev.get("address", ""), placeholder="Full address")
@@ -275,6 +276,7 @@ with st.expander("📝 Mall & search inputs (optional — submit to pre-fill Sto
         mall_instagram_link = st.text_input("Mall Instagram Link", value=_prev.get("mall_instagram_link", ""), placeholder="https://www.instagram.com/...")
         hashtags_youtube_twitter = st.text_input("Hashtags for use in Youtube, X(Twitter) Posts", value=_prev.get("hashtags_youtube_twitter", ""), placeholder="#mall #shopping ...")
         googlesearch_query = st.text_area("Search query for Store Opening Discovery", value=_prev.get("googlesearch_query", ""), placeholder="e.g. Latest update about [mall name] · Coming soon tenants at [mall name]", height=80)
+        map_visual_url = st.text_input("Mall Map URL (for Map Visual Analysis)", value=_prev.get("map_visual_url", ""), placeholder="e.g. https://www.simon.com/mall/midland-park-mall/map/#/")
         submitted = st.form_submit_button("Submit")
     if submitted:
         save_shared_input({
@@ -285,8 +287,9 @@ with st.expander("📝 Mall & search inputs (optional — submit to pre-fill Sto
             "mall_instagram_link": (mall_instagram_link or "").strip(),
             "hashtags_youtube_twitter": (hashtags_youtube_twitter or "").strip(),
             "googlesearch_query": (googlesearch_query or "").strip(),
+            "map_visual_url": (map_visual_url or "").strip(),
         })
-        st.success("Saved. Open Store Opening Discovery or Mall AI Dashboard to use this data.")
+        st.success("Saved. Open Store Opening Discovery, Mall AI Dashboard, or Map Visual Analysis to use this data.")
 
 st.markdown("---")
 

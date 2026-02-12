@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 
 from llm_engine import run_llm_analysis
@@ -10,6 +11,23 @@ from scrape_and_clean import scrape_and_prepare
 from facebook_scraper import scrape_facebook_simple
 from instagram import scrape_instagram_simple
 from excel_exporter import create_mall_excel_export
+
+def _load_shared_urls() -> str:
+    """If main dashboard submitted data, pre-fill website/Facebook/Instagram URLs."""
+    shared = Path(__file__).resolve().parent.parent / "shared_dashboard_input.json"
+    if not shared.exists():
+        return ""
+    try:
+        with open(shared, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        parts = []
+        for key in ("official_website", "mall_facebook_link", "mall_instagram_link"):
+            v = (data.get(key) or "").strip()
+            if v:
+                parts.append(v)
+        return "\n".join(parts) if parts else ""
+    except Exception:
+        return ""
 
 st.set_page_config(page_title="Mall AI Dashboard", page_icon="🏬", layout="wide")
 
@@ -43,7 +61,8 @@ with st.container():
     st.write("")
 
 # Optional custom mall URL for scraping (supports website, Facebook, and Instagram URLs)
-input_url = st.text_area("Mall Website URL(s), Facebook Page URL(s), or Instagram Profile URL(s)", value="", help="Enter one or more URLs separated by commas or new lines. Supports website URLs, Facebook page URLs, and Instagram profile URLs (e.g., https://example.com, https://www.facebook.com/Vishaal.Mall/, https://www.instagram.com/lulu_mall/)", height=100)
+_prefilled_urls = _load_shared_urls()
+input_url = st.text_area("Mall Website URL(s), Facebook Page URL(s), or Instagram Profile URL(s)", value=_prefilled_urls, help="Enter one or more URLs separated by commas or new lines. Supports website URLs, Facebook page URLs, and Instagram profile URLs (e.g., https://example.com, https://www.facebook.com/Vishaal.Mall/, https://www.instagram.com/lulu_mall/)", height=100)
 
 # -------------------------------------------------
 # File Uploads
