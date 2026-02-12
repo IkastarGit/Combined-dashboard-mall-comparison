@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Main UI shared input (user data, do not commit)
+shared_dashboard_input.json
+
 # Python
 __pycache__/
 *.py[cod]

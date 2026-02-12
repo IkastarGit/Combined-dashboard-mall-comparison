@@ -6,14 +6,30 @@ Run: streamlit run app_streamlit.py
 
 import csv
 import io
+import json
+from pathlib import Path
 from urllib.parse import urlparse
 
 import streamlit as st
 from pipeline import run_pipeline, run_pipeline_gemini_only
 
+def _load_shared_query() -> str:
+    """If main dashboard submitted data, pre-fill the search query."""
+    shared = Path(__file__).resolve().parent.parent / "shared_dashboard_input.json"
+    if not shared.exists():
+        return ""
+    try:
+        with open(shared, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return (data.get("googlesearch_query") or "").strip()
+    except Exception:
+        return ""
+
 st.set_page_config(page_title="Store Opening Discovery", page_icon="🔍", layout="wide")
 st.title("Retail Store Opening Discovery")
 st.caption("Get current 2026 data · Uses OpenAI for AI analysis")
+
+_prefilled_query = _load_shared_query()
 
 with st.form("search_form"):
     use_web_search = st.checkbox(
@@ -23,6 +39,7 @@ with st.form("search_form"):
     )
     custom_query = st.text_input(
         "Search query",
+        value=_prefilled_query,
         placeholder="e.g. Latest update about Westfield Southcenter Mall · or Coming soon tenants at [mall name]",
     )
     submitted = st.form_submit_button("Get Results")

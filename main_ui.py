@@ -4,16 +4,17 @@ Run: streamlit run main_ui.py --server.port 8501
 Apps start automatically on first load. Click a link to open in a new tab (no collapse, opens immediately).
 """
 
+import json
 import socket
 import subprocess
 import sys
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 # Ports and app paths (ROOT = folder containing main_ui.py)
 ROOT = Path(__file__).resolve().parent
+SHARED_INPUT_FILE = ROOT / "shared_dashboard_input.json"
 
 # Prefer project .venv Python so all sub-apps use same env
 def _python_executable():
@@ -31,31 +32,28 @@ APPS = [
         "key": "store_opening",
         "icon": "🔍",
         "title": "Store Opening Discovery",
-        "desc": "Search web for mall/store opening data, extract and analyze with AI. Get 2026 tenant and event info.",
+        "desc": "Find mall and store opening data with AI. Extract 2026 tenant and event info from the web.",
         "port": PORT_STORE_OPENING,
         "cwd": ROOT / "googlesearch",
         "script": "app_streamlit.py",
-        "button_text": "Click to Application"
     },
     {
         "key": "mall_dashboard",
         "icon": "🏬",
         "title": "Mall AI Dashboard",
-        "desc": "Scrape mall directories, compare with old data, run Facebook/Instagram scrapers, and generate AI insights.",
+        "desc": "Scrape mall directories and Facebook/Instagram. Compare data over time and generate AI insights.",
         "port": PORT_MALL_DASHBOARD,
         "cwd": ROOT / "Mall_Ai_Dashboard",
         "script": "app.py",
-        "button_text": "Click to Application"
     },
     {
         "key": "map_dashboard",
         "icon": "🗺️",
         "title": "Map Visual Analysis",
-        "desc": "Analyze mall map screenshots with OCR and SBERT. Match with database and visualize missing tenants on the map.",
+        "desc": "Analyze mall map screenshots with OCR. Match tenants to your database and see gaps on the map.",
         "port": PORT_MAP_DASHBOARD,
         "cwd": ROOT / "Map scrapping",
         "script": "mall_analysis_app.py",
-        "button_text": "Click to Application"
     },
 ]
 
@@ -78,6 +76,33 @@ def _find_free_port(start_port: int, max_tries: int = 20) -> int:
         port += 1
     # Fallback: return the original requested port (may still be in use)
     return start_port
+
+
+def load_shared_input() -> dict:
+    """Load mall/search input from shared JSON. Returns dict with empty strings if missing."""
+    default = {
+        "mall_name": "",
+        "address": "",
+        "official_website": "",
+        "mall_facebook_link": "",
+        "mall_instagram_link": "",
+        "hashtags_youtube_twitter": "",
+        "googlesearch_query": "",
+    }
+    if not SHARED_INPUT_FILE.exists():
+        return default
+    try:
+        with open(SHARED_INPUT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {**default, **{k: str(v).strip() if v is not None else "" for k, v in data.items()}}
+    except Exception:
+        return default
+
+
+def save_shared_input(data: dict) -> None:
+    """Write mall/search input to shared JSON for sub-apps to read."""
+    with open(SHARED_INPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 def start_app(cwd: Path, script: str, preferred_port: int) -> int:
@@ -131,88 +156,145 @@ if "app_ports" not in st.session_state:
 
 st.markdown("""
 <style>
-/* Base */
-.stApp { background: linear-gradient(160deg, #0c1222 0%, #1a2332 40%, #0f172a 100%); color: #e2e8f0; min-height: 100vh; }
-/* Header */
-.dashboard-header { margin-bottom: 2.5rem; }
-.dashboard-title { font-size: 2.25rem; font-weight: 800; color: #f8fafc; letter-spacing: -0.02em; margin: 0 0 0.35rem 0; }
-.dashboard-subtitle { color: #64748b; font-size: 1rem; margin: 0; font-weight: 500; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* Cards: same height, flex layout */
-/* Cards: vertical layout with full-width button */
+/* Base: clean dark background */
+.stApp {
+    background: #0f1419;
+    color: #e7e9ea;
+    min-height: 100vh;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Header: clear hierarchy */
+.dashboard-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.dashboard-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 0.25rem 0;
+    letter-spacing: -0.02em;
+}
+.dashboard-subtitle {
+    color: #8b98a5;
+    font-size: 0.9375rem;
+    margin: 0;
+    font-weight: 400;
+}
+
+/* Cards: neat, readable */
 .project-card {
-    height: auto;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-    background: linear-gradient(165deg, rgba(30,41,59,0.85) 0%, rgba(15,23,42,0.95) 100%);
-    padding: 2.25rem;
-    border-radius: 20px;
-    border: 1px solid rgba(148,163,184,0.12);
-    box-shadow: 0 4px 24px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.03) inset;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-    margin-bottom: 2rem;
+    gap: 1.25rem;
+    background: #192734;
+    padding: 1.5rem 1.75rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 1rem;
+    transition: border-color 0.15s ease, background 0.15s ease;
 }
 .project-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(14,165,233,0.15);
-    border-color: rgba(14,165,233,0.2);
+    border-color: rgba(29,155,240,0.35);
+    background: #1c2d3d;
 }
-.project-card-info {
-    width: 100%;
+.project-card-info { width: 100%; }
+.project-card-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 0.5rem 0;
+    line-height: 1.3;
 }
-.project-card-title { font-size: 1.6rem; font-weight: 800; color: #f1f5f9; margin: 0 0 0.75rem 0; line-height: 1.2; }
 .project-card-desc {
-    color: #94a3b8;
-    font-size: 1.05rem;
-    line-height: 1.6;
+    color: #8b98a5;
+    font-size: 0.875rem;
+    line-height: 1.5;
     margin: 0;
 }
-.project-card-cta-container {
-    width: 100%;
-    margin-top: 0.5rem;
-}
+.project-card-cta-container { width: 100%; margin-top: 0.25rem; }
 .project-card-cta {
-    display: flex;
-    width: 100%;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 1.5rem;
-    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
-    color: white !important;
-    border-radius: 14px;
+    padding: 0.4rem 0.9rem;
+    background: #1d9bf0;
+    color: #fff !important;
+    border-radius: 9999px;
     text-decoration: none;
-    font-weight: 800;
-    font-size: 1.4rem;
-    transition: all 0.2s ease;
-    box-shadow: 0 6px 20px rgba(14,165,233,0.4);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 0 0 0 rgba(29,155,240,0.4);
 }
-.project-card-cta:hover { 
-    opacity: 0.95; 
-    transform: scale(1.02); 
-    box-shadow: 0 8px 30px rgba(14,165,233,0.5);
-    color: white !important; 
+.project-card-cta:hover {
+    background: #1a8cd8;
+    color: #fff !important;
+    transform: scale(1.04);
+    box-shadow: 0 0 0 4px rgba(29,155,240,0.25);
 }
 
+/* Input section */
+.input-section { margin-bottom: 2rem; }
+.input-section h3 { font-size: 1rem; font-weight: 600; color: #fff; margin: 0 0 1rem 0; }
+.input-row { border-bottom: 1px solid rgba(255,255,255,0.08); padding: 0.5rem 0; margin-bottom: 0.25rem; }
+.input-label { font-size: 0.875rem; color: #8b98a5; margin-bottom: 0.25rem; }
+
 /* Footer */
-.dashboard-footer { margin-top: 2.5rem; padding-top: 1.25rem; border-top: 1px solid rgba(148,163,184,0.1); color: #64748b; font-size: 0.85rem; }
+.dashboard-footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    color: #6e767d;
+    font-size: 0.8125rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <div class='dashboard-header'>
-    <h1 class='dashboard-title'>Combined Dashboard</h1>
-    <p class='dashboard-subtitle'>Access all your mall analysis tools from one place</p>
+    <h1 class='dashboard-title'>Webresearch Combined Dashboard</h1>
+    <p class='dashboard-subtitle'>Mall research, scraping, and map analysis in one place</p>
 </div>
 """, unsafe_allow_html=True)
 
+# Load existing shared input for pre-fill
+_prev = load_shared_input()
+
+with st.expander("📝 Mall & search inputs (optional — submit to pre-fill Store Opening Discovery & Mall AI Dashboard)", expanded=True):
+    st.markdown("Provide mall details and search query below. After **Submit**, open Store Opening Discovery or Mall AI Dashboard to use this data. If you leave fields empty, those apps run as usual and you can enter data there.")
+    with st.form("shared_input_form"):
+        mall_name = st.text_input("Mall Name", value=_prev.get("mall_name", ""), placeholder="e.g. Westfield Southcenter")
+        address = st.text_input("Address", value=_prev.get("address", ""), placeholder="Full address")
+        official_website = st.text_input("Official Web Site", value=_prev.get("official_website", ""), placeholder="https://...")
+        mall_facebook_link = st.text_input("Mall Facebook Link", value=_prev.get("mall_facebook_link", ""), placeholder="https://www.facebook.com/...")
+        mall_instagram_link = st.text_input("Mall Instagram Link", value=_prev.get("mall_instagram_link", ""), placeholder="https://www.instagram.com/...")
+        hashtags_youtube_twitter = st.text_input("Hashtags for use in Youtube, X(Twitter) Posts", value=_prev.get("hashtags_youtube_twitter", ""), placeholder="#mall #shopping ...")
+        googlesearch_query = st.text_area("Search query for Store Opening Discovery", value=_prev.get("googlesearch_query", ""), placeholder="e.g. Latest update about [mall name] · Coming soon tenants at [mall name]", height=80)
+        submitted = st.form_submit_button("Submit")
+    if submitted:
+        save_shared_input({
+            "mall_name": (mall_name or "").strip(),
+            "address": (address or "").strip(),
+            "official_website": (official_website or "").strip(),
+            "mall_facebook_link": (mall_facebook_link or "").strip(),
+            "mall_instagram_link": (mall_instagram_link or "").strip(),
+            "hashtags_youtube_twitter": (hashtags_youtube_twitter or "").strip(),
+            "googlesearch_query": (googlesearch_query or "").strip(),
+        })
+        st.success("Saved. Open Store Opening Discovery or Mall AI Dashboard to use this data.")
+
+st.markdown("---")
+
 # Vertical list of cards
 for app in APPS:
-    # Use the dynamically assigned port for each app (falls back to preferred)
     actual_port = st.session_state.app_ports.get(app["key"], app["port"])
     url = f"http://localhost:{actual_port}"
+    button_label = f"Open {app['title']}"
     st.markdown(
         f"""
         <div class='project-card'>
@@ -221,7 +303,7 @@ for app in APPS:
                 <div class='project-card-desc'>{app['desc']}</div>
             </div>
             <div class='project-card-cta-container'>
-                <a href='{url}' target='_blank' rel='noopener noreferrer' class='project-card-cta'>{app['button_text']}</a>
+                <a href='{url}' target='_blank' rel='noopener noreferrer' class='project-card-cta'>{button_label}</a>
             </div>
         </div>
         """,
@@ -229,7 +311,7 @@ for app in APPS:
     )
 
 st.markdown(
-    '<p class="dashboard-footer">Apps start automatically when you open this page. If a tab shows "can\'t connect", wait a few seconds and click the link again.</p>',
+    '<p class="dashboard-footer">Apps start when you open this page. If a link doesn’t load, wait a few seconds and try again.</p>',
     unsafe_allow_html=True,
 )
 
