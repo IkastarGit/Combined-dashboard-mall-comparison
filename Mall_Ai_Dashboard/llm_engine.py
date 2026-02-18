@@ -5,7 +5,6 @@ import re
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
-import base64
 
 # Load environment variables from .env BEFORE reading them.
 # 1) Default search (current working dir and parents)
@@ -104,6 +103,108 @@ def _call_openai_chat(
     except Exception as e:
         print(f"Warning: Failed to parse OpenAI response: {e}")
         return None
+
+
+def extract_serp_with_ai(serp_items: list, tenant_names: list) -> list:
+    """
+    Use AI to clean and extract structured information from SERP API results,
+    and optionally match each result to a tenant/shop name from the mall directory.
+
+    Args:
+        serp_items: List of dicts with keys title, snippet, link, source (from SerpApi).
+        tenant_names: List of tenant/shop names from the mall directory (for matching).
+
+    Returns:
+        List of dicts with keys: title (cleaned extracted info), snippet (optional extra),
+        link, matched_tenant (tenant name if the result is about that shop, else null).
+        If AI fails or is unavailable, returns the original items with matched_tenant=None.
+    """
+    if not serp_items:
+        return []
+    if not OPENAI_API_KEY:
+        return [
+            {**item, "matched_tenant": None}
+            for item in serp_items
+        ]
+
+    # Build input text for the model (truncate if very long)
+    tenant_list = ", ".join(str(n).strip() for n in tenant_names[:80] if n and str(n).strip())
+    lines = []
+    for i, item in enumerate(serp_items[:25], 1):
+        title = (item.get("title") or "").strip()
+        snippet = (item.get("snippet") or "").strip()
+        link = (item.get("link") or "").strip()
+        source = (item.get("source") or "").strip()
+        lines.append(f"[Item {i}]\nTitle: {title}\nSnippet: {snippet}\nURL: {link}\nSource: {source}")
+    input_text = "\n\n".join(lines)
+    if len(input_text) > 12000:
+        input_text = input_text[:12000] + "\n\n... (truncated)"
+
+    prompt = f"""You are an expert at extracting and cleaning information from web search results about malls and retail.
+
+TASK: For each search result below, produce a CLEAN, structured summary suitable for a mall research Excel sheet. Remove emojis, replacement characters (□), and junk. Extract:
+- Mall or business name, address, contact info, hours, website/social links.
+- Any news, events, or general information about the mall or its tenants.
+
+TENANT/SHOP NAMES FROM THIS MALL (use these only for matching; do not invent names):
+{tenant_list or "(none provided)"}
+
+For each item, if the result is clearly ABOUT a specific tenant/shop from the list above, set "matched_tenant" to that exact tenant name. Otherwise set "matched_tenant" to null.
+
+INPUT (raw SERP results):
+{input_text}
+
+OUTPUT: Return a JSON array. One object per input item, in the same order. Each object must have:
+- "title": string. Short cleaned headline (e.g. "Plaza Frontenac – Address, contact, hours").
+- "snippet": string. Clean extracted information (address, phone, hours, links, news). No emojis or □.
+- "link": string. The URL from the item (copy exactly).
+- "matched_tenant": string or null. Tenant name from the list if this result is about that shop; otherwise null.
+
+Return ONLY the JSON array, no markdown or explanation."""
+
+    raw = _call_openai_chat(
+        prompt,
+        temperature=0.1,
+        max_tokens=4096,
+        response_format="json_object",
+        timeout_seconds=90,
+    )
+    if not raw:
+        return [{**item, "matched_tenant": None} for item in serp_items]
+
+    try:
+        # Handle optional markdown code block
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+        parsed = json.loads(text)
+        if isinstance(parsed, dict) and "items" in parsed:
+            items = parsed["items"]
+        elif isinstance(parsed, list):
+            items = parsed
+        else:
+            return [{**item, "matched_tenant": None} for item in serp_items]
+        out = []
+        for i, obj in enumerate(items):
+            if not isinstance(obj, dict):
+                continue
+            link = (obj.get("link") or "").strip()
+            if not link and i < len(serp_items):
+                link = (serp_items[i].get("link") or "").strip()
+            out.append({
+                "title": str(obj.get("title") or "").strip() or (serp_items[i].get("title") if i < len(serp_items) else ""),
+                "snippet": str(obj.get("snippet") or "").strip() or (serp_items[i].get("snippet") if i < len(serp_items) else ""),
+                "link": link,
+                "source": (serp_items[i].get("source") or "").strip() if i < len(serp_items) else "",
+                "matched_tenant": obj.get("matched_tenant") if obj.get("matched_tenant") else None,
+            })
+        if out:
+            return out
+    except Exception as e:
+        print(f"Warning: Failed to parse AI SERP extraction: {e}")
+    return [{**item, "matched_tenant": None} for item in serp_items]
 
 
 def extract_shops_from_text(cleaned_text: str, url: str = "") -> list:
@@ -941,302 +1042,3 @@ Generate a CLEAR, UNDERSTANDABLE report from the actual data provided.
 
     except Exception as e:
         return json.dumps({"error": str(e)})
-
-
-
-def extract_shops_from_image_via_llm(image_path: str, url: str = "") -> list:
-    """
-    Extracts mall tenant data from a map image using OpenAI Vision.
-    
-    Args:
-        image_path: Path to the image file.
-        url: Optional URL for context.
-        
-    Returns:
-        List of tenant dictionaries.
-    """
-    if not os.path.exists(image_path):
-        print(f"Error: Image path does not exist: {image_path}")
-        return []
-
-    try:
-        with open(image_path, "rb") as image_file:
-            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-    except Exception as e:
-        print(f"Error encoding image: {e}")
-        return []
-
-    # Function to call LLM on an image chunk
-    def process_image_chunk(b64_img, chunk_id="Full"):
-        chunk_prompt = [
-            {
-                "type": "text", 
-                "text": f"""You are an expert data extraction assistant.
-                
-                TASK: Extract EVERY SINGLE TENANT from the provided mall map segment ({chunk_id}).
-                Mall Website Context: {url}
-                
-                CRITICAL INSTRUCTIONS:
-                1. READ ORDER: Scan the image strictly from TOP to BOTTOM, COLUMN by COLUMN. Mall directories often have multiple columns of names.
-                2. EXHAUSTIVENESS: You must transcribe EVERY line of text that represents a store, service, or brand. Do not skip ANY names.
-                3. LOCATION IDs: Mall directories often use dots or dashes to separate names from codes (e.g., "Aeropostale ........ 137"). You MUST extract the number/code (137) into the 'Unit/Code' column. Do NOT leave it in the 'Name' column.
-                4. LABELS: Also extract shop names written directly on the map graphic (e.g. large bold text inside store shapes).
-                
-                OUTPUT FORMAT (Pipe Separated):
-                Name | Category | Unit/Code | Floor | Status | [ymin, xmin, ymax, xmax]
-                
-                COORDINATES:
-                - Estimate [ymin, xmin, ymax, xmax] (0-1000) for where the text appears in this chunk.
-                
-                Example:
-                Aeropostale | Apparel | 137 | Level 1 | Occupied | [850, 40, 860, 200]
-                Dick's Sporting Goods | Sporting Goods | | Level 2 | Occupied | [400, 200, 500, 400]
-                """
-            },
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{b64_img}"
-                }
-            }
-        ]
-        
-        print(f"Sending request to OpenAI Vision for {chunk_id} (Size: {len(b64_img)} bytes)...")
-        return _call_openai_chat(
-            chunk_prompt,
-            temperature=0.0,
-            max_tokens=4096,
-            response_format=None,
-            timeout_seconds=180
-        )
-
-    # 1. Try Full Image First
-    raw = process_image_chunk(base64_image, "Full Image")
-    
-    if not raw:
-        print("Warning: Empty response from vision model.")
-        return []
-
-    # Parse results
-    def parse_vision_response(raw_text):
-        parsed_shops = []
-        lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
-        for line in lines:
-            if line.startswith("```"): continue
-            if "|" not in line: continue
-            parts = [p.strip() for p in line.split("|")]
-            if not parts: continue
-            
-            name = parts[0]
-            if "Name" in name and "Category" in parts[1]: continue
-            if "**" in name or "Format" in name: continue
-            if not name or len(name) < 1: continue
-
-            category = parts[1] if len(parts) > 1 else ""
-            unit = parts[2] if len(parts) > 2 else ""
-            floor = parts[3] if len(parts) > 3 else ""
-            status = parts[4] if len(parts) > 4 else "Occupied"
-            bbox = parts[5] if len(parts) > 5 else ""
-
-            # --- ROBUST LOCATION ID FALLBACK ---
-            # If unit is empty, but name contains a trailing ID (e.g. "Aeropostale ... 137")
-            # we try to split it manually as a safety measure.
-            if not unit:
-                import re
-                # Check for "Name ...... 123" or "Name 123" patterns
-                # This regex looks for dots or spaces followed by a code at the end of the name
-                match = re.search(r'^(.*?)[\.\s]{2,}([A-Z0-9]{1,5})$', name)
-                if match:
-                    name = match.group(1).strip()
-                    unit = match.group(2).strip()
-            
-            if bbox and (not bbox.strip().startswith("[") or not bbox.strip().endswith("]")): bbox = ""
-            if name.strip().isdigit() and len(name.strip()) < 3 and not unit: continue
-
-            parsed_shops.append({
-                "name": name,
-                "category": category,
-                "location_id": unit,
-                "floor": floor,
-                "status": status,
-                "bbox": bbox,
-                "description": f"Category: {category} | Unit: {unit} | Status: {status}" if category or unit else ""
-            })
-        return parsed_shops
-
-    shops = parse_vision_response(raw)
-    print(f"Initial Vision Pass extracted {len(shops)} tenants.")
-
-    # 2. Adaptive Split Strategy for Maximum Recall
-    # Granularity increased to handle high-density directories (8-9 chunks)
-    
-    print("Engaging High-Density Adaptive Split Scan...")
-    try:
-        from PIL import Image
-        import io
-        
-        # Decode base64 to PIL
-        image_data = base64.b64decode(base64_image)
-        img = Image.open(io.BytesIO(image_data))
-        w, h = img.size
-        
-        # Determine split strategy based on aspect ratio
-        # GRID SPLITTING (Increases resolution for tiny text)
-        if w > 1.2 * h:
-            # Wide - 2 rows x 4 columns (8 chunks)
-            rows, cols = 2, 4
-            print(f"Image is Wide ({w}x{h}). Splitting into 2x4 Grid (8 Chunks).")
-        elif h > 1.2 * w:
-            # Tall - 4 rows x 2 columns (8 chunks)
-            rows, cols = 4, 2
-            print(f"Image is Tall ({w}x{h}). Splitting into 4x2 Grid (8 Chunks).")
-        else:
-            # Square - 3x3 Grid (9 chunks)
-            rows, cols = 3, 3
-            print(f"Image is Square-ish ({w}x{h}). Splitting into 3x3 Grid (9 Chunks).")
-
-        # Overlap of 20% to ensure no text is cut in half or missed at borders
-        overlap_w = int(w * 0.20)
-        overlap_h = int(h * 0.20)
-        
-        step_w = w / cols
-        step_h = h / rows
-        
-        chunks = []
-        for r in range(rows):
-            for c in range(cols):
-                # Calculate ideal bounds
-                x0 = int(c * step_w)
-                y0 = int(r * step_h)
-                x1 = int((c + 1) * step_w)
-                y1 = int((r + 1) * step_h)
-                
-                # Apply overlaps
-                crop_x0 = max(0, x0 - overlap_w if c > 0 else x0)
-                crop_y0 = max(0, y0 - overlap_h if r > 0 else y0)
-                crop_x1 = min(w, x1 + overlap_w if c < cols - 1 else x1)
-                crop_y1 = min(h, y1 + overlap_h if r < rows - 1 else y1)
-                
-                chunk_name = f"Grid R{r+1}C{c+1}"
-                chunk_img = img.crop((crop_x0, crop_y0, crop_x1, crop_y1))
-                
-                # Store plain offset for coordinate reconstruction
-                chunks.append((chunk_name, chunk_img, crop_x0, crop_y0))
-        
-        split_shops = []
-        
-        for c_name, c_img, c_off_x, c_off_y in chunks:
-            buf = io.BytesIO()
-            c_img.save(buf, format="JPEG", quality=95) 
-            c_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-            
-            c_raw = process_image_chunk(c_b64, c_name)
-            if c_raw:
-                c_parsed = parse_vision_response(c_raw)
-                
-                # ADJUST COORDINATES
-                chunk_w, chunk_h = c_img.size
-                
-                for shop in c_parsed:
-                    bbox_str = shop.get("bbox", "")
-                    if bbox_str and bbox_str.startswith("[") and bbox_str.endswith("]"):
-                        try:
-                            coords = json.loads(bbox_str)
-                            if len(coords) == 4:
-                                # Local normalized (0-1000)
-                                l_ymin, l_xmin, l_ymax, l_xmax = coords
-                                
-                                # Convert to local pixels
-                                p_ymin = (l_ymin / 1000.0) * chunk_h
-                                p_xmin = (l_xmin / 1000.0) * chunk_w
-                                p_ymax = (l_ymax / 1000.0) * chunk_h
-                                p_xmax = (l_xmax / 1000.0) * chunk_w
-                                
-                                # Add offset to get global pixels
-                                g_ymin = p_ymin + c_off_y
-                                g_xmin = p_xmin + c_off_x
-                                g_ymax = p_ymax + c_off_y
-                                g_xmax = p_xmax + c_off_x
-                                
-                                # Back to global normalized (0-1000)
-                                n_ymin = int((g_ymin / h) * 1000)
-                                n_xmin = int((g_xmin / w) * 1000)
-                                n_ymax = int((g_ymax / h) * 1000)
-                                n_xmax = int((g_xmax / w) * 1000)
-                                
-                                shop["bbox"] = f"[{n_ymin}, {n_xmin}, {n_ymax}, {n_xmax}]"
-                        except Exception:
-                            pass 
-
-                print(f"  {c_name}: Found {len(c_parsed)} tenants.")
-                split_shops.extend(c_parsed)
-        
-        # Merge Strategy:
-        # We heavily prioritize the split results.
-        # Deduplicate based on (Name, LocationID) pair.
-        
-        final_shops_list = []
-        name_to_shops = {} 
-
-        def is_duplicate(new_shop, existing_list):
-            new_name = new_shop['name'].lower().strip()
-            new_loc = str(new_shop.get('location_id', '')).strip().lower()
-            
-            for ext in existing_list:
-                ext_loc = str(ext.get('location_id', '')).strip().lower()
-                
-                # Case 1: Same name, Same Location ID (definitely duplicate)
-                if new_loc == ext_loc and new_loc != "":
-                    return True
-                
-                # Case 2: Same name, both have no location ID (likely duplicate)
-                if new_loc == "" and ext_loc == "":
-                    return True
-                
-                # Case 3: Same name, one has location ID, other doesn't
-                # If we are adding one WITHOUT an ID but we already have one WITH an ID, it's a duplicate of that one
-                if new_loc == "" and ext_loc != "":
-                    return True
-                    
-            return False
-
-        def add_shop(s):
-            name_key = s['name'].lower().strip()
-            if name_key not in name_to_shops:
-                name_to_shops[name_key] = []
-            
-            if not is_duplicate(s, name_to_shops[name_key]):
-                # If the new one has a location ID and we have an existing one with NO ID, 
-                # we replace the one with no ID.
-                replaced = False
-                for i, ext in enumerate(name_to_shops[name_key]):
-                    if str(ext.get('location_id', '')).strip() == "" and str(s.get('location_id', '')).strip() != "":
-                        # Replace in final list
-                        for j, master_s in enumerate(final_shops_list):
-                            if master_s == ext:
-                                final_shops_list[j] = s
-                                break
-                        # Replace in tracker
-                        name_to_shops[name_key][i] = s
-                        replaced = True
-                        break
-                
-                if not replaced:
-                    name_to_shops[name_key].append(s)
-                    final_shops_list.append(s)
-
-        # 1. Process split scans first
-        for s in split_shops:
-            add_shop(s)
-        
-        # 2. Add from full scan only if unique
-        for s in shops:
-            add_shop(s)
-            
-        shops = final_shops_list
-        print(f"Final Merged Count: {len(shops)} tenants (Duplicates strictly pruned).")
-
-    except Exception as e:
-        print(f"Error during image splitting: {e}")
-
-    return shops

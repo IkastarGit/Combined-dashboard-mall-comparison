@@ -875,27 +875,6 @@ if 'merged_tenant_list' in st.session_state and st.session_state.merged_tenant_l
         except Exception as e:
             st.error(f"Failed to prepare merged tenant list for download: {e}")
 
-# Show merged tenant list if available
-if 'merged_tenant_list' in st.session_state and st.session_state.merged_tenant_list is not None:
-    merged_list = st.session_state.merged_tenant_list
-    with st.expander("📋 Updated Tenant List (Existing + New Shops)", expanded=True):
-        st.info(f"**Total shops in merged list:** {len(merged_list)}")
-        st.dataframe(merged_list)
-        
-        # Download button for merged tenant list
-        try:
-            csv_bytes = merged_list.to_csv(index=False).encode("utf-8")
-            filename = "updated_tenant_list.csv"
-            st.download_button(
-                "⬇️ Download Updated Tenant List (CSV)",
-                data=csv_bytes,
-                file_name=filename,
-                mime="text/csv",
-                key="download_merged_tenant_list"
-            )
-            st.success("✅ This file contains all existing tenants plus newly extracted shops (no duplicates)")
-        except Exception as e:
-            st.error(f"Failed to prepare merged tenant list for download: {e}")
 
 # Prefer persisted structured_data from session_state if available
 if st.session_state.structured_data:
