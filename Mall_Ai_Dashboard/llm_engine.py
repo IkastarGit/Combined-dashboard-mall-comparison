@@ -1042,3 +1042,4 @@ Generate a CLEAR, UNDERSTANDABLE report from the actual data provided.
 
     except Exception as e:
         return json.dumps({"error": str(e)})
+
