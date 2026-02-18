@@ -104,6 +104,7 @@ def create_mall_excel_export(
             traceback.print_exc()
     
     # Fetch SERP news/blogs for mall (mall name + address from main UI)
+    # Use same query style as terminal so Excel "Google SERP Scratch" matches: title-case mall name, full results.
     google_search_results = []
     try:
         mall_name = metadata.get("mall_name") or ""
@@ -122,9 +123,12 @@ def create_mall_excel_export(
                     address = (_data.get("address") or "").strip()
         mall_name = mall_name if mall_name and mall_name != "Not Available" else ""
         address = address if address and address != "Not Available" else ""
+        # Normalize for SERP: title-case mall name so we get same news-style results as terminal (e.g. "Plaza Frontenac")
+        if mall_name:
+            mall_name = " ".join(w.capitalize() for w in mall_name.split())
         if mall_name or address:
             from serp_news_scraper import fetch_mall_news
-            google_search_results = fetch_mall_news(mall_name, address)
+            google_search_results = fetch_mall_news(mall_name, address, max_results=15)
     except Exception as e:
         pass
 
@@ -178,9 +182,11 @@ def create_existing_tenant_research_only_export(
                     address = (_data.get("address") or "").strip()
         mall_name = mall_name if mall_name and mall_name != "Not Available" else ""
         address = address if address and address != "Not Available" else ""
+        if mall_name:
+            mall_name = " ".join(w.capitalize() for w in mall_name.split())
         if mall_name or address:
             from serp_news_scraper import fetch_mall_news
-            google_search_results = fetch_mall_news(mall_name, address)
+            google_search_results = fetch_mall_news(mall_name, address, max_results=15)
     except Exception:
         pass
     _create_existing_tenants_tab(wb, scraped_df, structured_data, google_search_results=google_search_results)
@@ -1471,8 +1477,8 @@ def _create_instagram_scratch_tab(wb, scraped_df):
 
 
 def _create_serp_scratch_tab(wb, google_search_results):
-    """Create Google SERP Scratch tab with all SERP API results (like Facebook/Instagram Scratch).
-    Columns: SN, Title, General Information (snippet), URL, Source.
+    """Create Google SERP Scratch tab with all SERP API results (same structure as terminal output).
+    Columns: SN, Title, General Information (snippet), URL, Source, Date.
     """
     ws = wb.create_sheet("Google SERP Scratch")
     header_fill = PatternFill(start_color="800000", end_color="800000", fill_type="solid")
@@ -1485,7 +1491,7 @@ def _create_serp_scratch_tab(wb, google_search_results):
     )
     center_align = Alignment(horizontal="center", vertical="center")
 
-    headers = ["SN", "Title", "General Information", "URL", "Source"]
+    headers = ["SN", "Title", "General Information", "URL", "Source", "Date"]
     for col_idx, header in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.fill = header_fill
@@ -1500,13 +1506,14 @@ def _create_serp_scratch_tab(wb, google_search_results):
             ws.cell(row=row_idx, column=3, value=(item.get("snippet") or "").strip())
             ws.cell(row=row_idx, column=4, value=(item.get("link") or "").strip())
             ws.cell(row=row_idx, column=5, value=(item.get("source") or "").strip())
-            for c in range(1, 6):
+            ws.cell(row=row_idx, column=6, value=(item.get("date") or "").strip())
+            for c in range(1, 7):
                 cell = ws.cell(row=row_idx, column=c)
                 cell.border = thin_border
                 cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
     else:
         ws.cell(row=2, column=1, value="No SERP API data found")
-        ws.merge_cells('A2:E2')
+        ws.merge_cells('A2:F2')
         cell = ws.cell(row=2, column=1)
         cell.alignment = center_align
         cell.border = thin_border
@@ -1516,3 +1523,4 @@ def _create_serp_scratch_tab(wb, google_search_results):
     ws.column_dimensions['C'].width = 60  # General Information
     ws.column_dimensions['D'].width = 55  # URL
     ws.column_dimensions['E'].width = 20  # Source
+    ws.column_dimensions['F'].width = 18  # Date
