@@ -16,3 +16,6 @@ rapidfuzz
 blinker==1.7.0
 google-genai>=1.0.0
 openai>=1.0.0
+easyocr
+sentence-transformers
+torch
