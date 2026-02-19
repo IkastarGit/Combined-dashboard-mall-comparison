@@ -27,7 +27,7 @@ def create_driver(headless=True):
     a patched ChromeDriver at runtime — that always fails in Railway containers.
     """
     try:
-        return make_chrome_driver(headless=headless)
+        return make_chrome_driver(headless=headless, enable_network_logs=True)
     except Exception as e:
         print(f"Fatal: Could not initialize driver: {e}")
         return None
@@ -436,26 +436,39 @@ def scrape_mall_data(url, use_vision=False):
                 print("\nBrowser session lost or closed.")
                 break
 
-            # Use selenium-wire to intercept requests
-            for request in driver.requests:
-                auth = request.headers.get('Authorization')
-                if auth and "Bearer " in auth:
-                    token = auth.replace("Bearer ", "").strip()
-                    if len(token) > 20: captured['token'] = token
-                
-                req_url = request.url
-                if "mappedin.com" in req_url:
-                    if not captured['token']:
-                        import urllib.parse
-                        ps = urllib.parse.parse_qs(urllib.parse.urlparse(req_url).query)
-                        if 'token' in ps: captured['token'] = ps['token'][0]
-                        elif 'key' in ps: captured['token'] = ps['key'][0]
+            # Standard Selenium way to get network logs (performance logs)
+            # We parse these to find 'mappedin' requests and 'Authorization' headers
+            try:
+                logs = driver.get_log('performance')
+                for entry in logs:
+                    log = json.loads(entry['message'])['message']
+                    if log['method'] == 'Network.requestWillBeSent':
+                        req = log['params']['request']
+                        req_url = req['url']
+                        
+                        # 1. Capture Token from Authorization header
+                        headers = req.get('headers', {})
+                        auth = headers.get('Authorization') or headers.get('authorization')
+                        if auth and "Bearer " in auth:
+                            token = auth.replace("Bearer ", "").strip()
+                            if len(token) > 20: captured['token'] = token
+                        
+                        # 2. Capture Venue from URL
+                        if "mappedin.com" in req_url:
+                            if not captured['token']:
+                                import urllib.parse
+                                ps = urllib.parse.parse_qs(urllib.parse.urlparse(req_url).query)
+                                if 'token' in ps: captured['token'] = ps['token'][0]
+                                elif 'key' in ps: captured['token'] = ps['key'][0]
 
-                    parts = req_url.split('/')
-                    for j, part in enumerate(parts):
-                        if part in ['map', 'location', 'node', 'venue'] and j + 1 < len(parts):
-                            ext = parts[j+1].split('?')[0]
-                            if len(ext) > 5: captured['venue'] = ext
+                            parts = req_url.split('/')
+                            for j, part in enumerate(parts):
+                                if part in ['map', 'location', 'node', 'venue'] and j + 1 < len(parts):
+                                    ext = parts[j+1].split('?')[0]
+                                    if len(ext) > 5: captured['venue'] = ext
+            except Exception as ev:
+                # Performance logs might be empty or restricted
+                pass
 
             if captured['token'] and captured['venue']: break
             

@@ -46,11 +46,14 @@ def _find_chromedriver() -> Optional[str]:
     return shutil.which("chromedriver")
 
 
-def make_chrome_options(headless: bool = True, user_agent: Optional[str] = None) -> Options:
+def make_chrome_options(headless: bool = True, user_agent: Optional[str] = None, enable_network_logs: bool = False) -> Options:
     """
     Build Chrome options that work in both Docker/Railway containers and local Windows/Mac.
     """
     opts = Options()
+
+    if enable_network_logs:
+        opts.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
     # --- Binary location (critical in containers) ---
     chrome_bin = _find_chrome_binary()
@@ -101,13 +104,13 @@ def make_chrome_options(headless: bool = True, user_agent: Optional[str] = None)
     return opts
 
 
-def make_chrome_driver(headless: bool = True, user_agent: Optional[str] = None) -> webdriver.Chrome:
+def make_chrome_driver(headless: bool = True, user_agent: Optional[str] = None, enable_network_logs: bool = False) -> webdriver.Chrome:
     """
     Create a Chrome WebDriver instance that works in Docker/Railway containers.
 
     Uses system chromedriver if available; falls back to selenium-manager auto-download.
     """
-    opts = make_chrome_options(headless=headless, user_agent=user_agent)
+    opts = make_chrome_options(headless=headless, user_agent=user_agent, enable_network_logs=enable_network_logs)
 
     chromedriver_path = _find_chromedriver()
     if chromedriver_path:

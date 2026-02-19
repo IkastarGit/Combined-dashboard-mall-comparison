@@ -1043,3 +1043,106 @@ Generate a CLEAR, UNDERSTANDABLE report from the actual data provided.
     except Exception as e:
         return json.dumps({"error": str(e)})
 
+
+def extract_shops_from_image_via_llm(image_path: str, mall_url: str = "") -> list:
+    """
+    Core function for Vision AI mode.
+    Takes a screenshot of a mall map and uses LLM Vision to extract tenant listings.
+    """
+    import base64
+
+    if not os.path.exists(image_path):
+        print(f"Error: Image not found at {image_path}")
+        return []
+
+    # Encode image to base64
+    try:
+        with open(image_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+    except Exception as e:
+        print(f"Error encoding image: {e}")
+        return []
+
+    prompt = f"""You are an expert map analyst. Analyze this mall map image (URL: {mall_url}) and extract ALL tenant/shop names listed.
+    
+    INSTRUCTIONS:
+    1. Look for the legend, directory, or text on the map itself.
+    2. Extract EVERY shop/store/restaurant/brand name you find.
+    3. For each shop, provide: name, floor (if identifiable), and a brief description/category.
+    
+    Return ONLY valid JSON in this format:
+    {{
+      "tenants": [
+        {{
+          "name": "Shop Name",
+          "floor": "L1",
+          "description": "Fashion Retailer",
+          "location_id": "Optional shop number"
+        }}
+      ]
+    }}
+    
+    - Do not include markdown blocks.
+    - Return ONLY the raw JSON.
+    - If no shops are found, return an empty list for "tenants".
+    - Accuracy is critical.
+    """
+
+    # Call OpenAI with vision support
+    if not OPENAI_API_KEY:
+        print("Error: OPENAI_API_KEY not set.")
+        return []
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": OPENAI_MODEL,  # Should be gpt-4o or similar for vision
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{base64_image}"}
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 4096,
+        "response_format": {"type": "json_object"}
+    }
+
+    try:
+        r = requests.post(
+            f"{OPENAI_BASE_URL}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=180
+        )
+        r.raise_for_status()
+        resp = r.json()
+        raw_content = resp['choices'][0]['message']['content']
+        data = json.loads(raw_content)
+        
+        tenants = data.get("tenants", [])
+        # Ensure standard fields
+        for t in tenants:
+            if 'name' not in t: t['name'] = "Unknown"
+            if 'description' not in t: t['description'] = "Mall Tenant"
+            if 'location_id' not in t: t['location_id'] = ""
+            if 'floor' not in t: t['floor'] = "Level 1"
+            # Add placeholders for map data
+            t['hours'] = "Not Available"
+            t['latitude'] = None
+            t['longitude'] = None
+            
+        return tenants
+
+    except Exception as e:
+        print(f"Vision Error: {e}")
+        return []
+
