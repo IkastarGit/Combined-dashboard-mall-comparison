@@ -67,20 +67,20 @@ def get_chrome_options(headless: Optional[bool] = None) -> Options:
     opts.add_experimental_option("useAutomationExtension", False)
 
     opts.add_argument("--disable-blink-features=AutomationControlled")
-    # Required flags for running Chrome in Docker / Railway containers
+    # Required flags for Docker/Railway container environments
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-setuid-sandbox")
-    opts.add_argument("--single-process")
-    opts.add_argument("--no-zygote")
     opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-software-rasterizer")
     opts.add_argument("--window-size=" + CHROME_WINDOW_SIZE)
     opts.add_argument("--disable-infobars")
     opts.add_argument("--disable-extensions")
     opts.add_argument("--disable-notifications")
+    opts.add_argument("--remote-debugging-port=9222")
 
     if use_headless:
-        opts.add_argument("--headless=new")
+        opts.add_argument("--headless")
         opts.add_argument("--user-agent=" + _CHROME_USER_AGENT)
 
     return opts

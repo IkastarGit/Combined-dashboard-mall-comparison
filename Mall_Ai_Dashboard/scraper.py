@@ -40,15 +40,23 @@ def get_chromedriver_path():
 
 def create_driver():
     options = Options()
+
+    # Set Chromium binary explicitly (required in containers)
+    import os as _os
+    for _path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]:
+        if _os.path.exists(_path):
+            options.binary_location = _path
+            break
+
     if HEADLESS:
-        options.add_argument("--headless=new")
+        options.add_argument("--headless")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-setuid-sandbox")
-    options.add_argument("--single-process")
-    options.add_argument("--no-zygote")
+    options.add_argument("--disable-software-rasterizer")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
     driver = webdriver.Chrome(

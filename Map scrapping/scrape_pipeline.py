@@ -15,20 +15,33 @@ CHROME_PROFILE_DIR = os.path.join(os.getcwd(), "chrome_profile")
 
 def get_fresh_options(headless=True):
     options = ChromeOptions()
+
+    # Set Chromium binary explicitly (required in Linux/Railway containers)
+    import platform
+    for _path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]:
+        if os.path.exists(_path):
+            options.binary_location = _path
+            break
+
     if headless:
         options.add_argument("--headless")
-    options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
+
+    # Only use user-data-dir on Windows (C:\ paths don't exist on Linux containers)
+    if platform.system() == "Windows":
+        options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
+
     options.add_argument("--start-maximized")
     options.add_argument("--disable-notifications")
-    
-    # ADVANCED STEALTH FLAGS
-    # Note: undetected_chromedriver handles many of these internally.
-    options.add_argument("--ignore-certificate-errors")
-    options.add_argument("--allow-running-insecure-content")
+
+    # Container-required flags
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    
-    # Hide that we are using a proxy (common trigger for PerimeterX)
+    options.add_argument("--disable-setuid-sandbox")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+
+    options.add_argument("--ignore-certificate-errors")
+    options.add_argument("--allow-running-insecure-content")
     options.add_argument("--proxy-server='direct://'")
     options.add_argument("--proxy-bypass-list=*")
     return options
