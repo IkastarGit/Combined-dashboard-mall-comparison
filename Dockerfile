@@ -46,7 +46,7 @@ RUN google-chrome --version
 
 EXPOSE 8501
 
-CMD streamlit run railway_app.py \
+CMD streamlit run main_ui.py \
     --server.port ${PORT:-8501} \
     --server.address 0.0.0.0 \
     --server.headless true \

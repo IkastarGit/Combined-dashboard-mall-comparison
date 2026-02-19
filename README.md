@@ -59,7 +59,7 @@ One command starts the hub for all apps. This unified version works on a single 
 
 ```powershell
 .\.venv\Scripts\activate
-streamlit run railway_app.py --server.port 8501
+streamlit run main_ui.py --server.port 8501
 ```
 
 Then open **http://localhost:8501** in your browser.
@@ -76,8 +76,7 @@ The new unified dashboard runs everything on a **single port (8501)** using Stre
 
 ```
 combined-dashboard/
-├── railway_app.py          # Unified Entry Point (Local & Production)
-├── main_ui.py              # Legacy wrapper (points to railway_app.py)
+├── main_ui.py              # Unified Entry Point (Local & Production)
 ├── README.md               # This file
 ├── googlesearch/           # Store Opening Discovery
 ├── Mall_Ai_Dashboard/       # Mall AI Dashboard
@@ -103,4 +102,4 @@ combined-dashboard/
 | Create env | `python -m venv .venv` |
 | Activate (Windows) | `.\.venv\Scripts\activate` |
 | Install all deps | `pip install -r "Map scrapping\requirements.txt" -r "Mall_Ai_Dashboard\requirements.txt" -r "googlesearch\requirements.txt"` |
-| Run dashboard | `streamlit run railway_app.py --server.port 8501` |
+| Run dashboard | `streamlit run main_ui.py --server.port 8501` |

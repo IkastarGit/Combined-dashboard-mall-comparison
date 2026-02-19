@@ -7,7 +7,7 @@ def main():
     print("Starting Unified Dashboard (Local)...")
     try:
         subprocess.run(
-            [sys.executable, "-m", "streamlit", "run", str(root / "railway_app.py"), "--server.port", "8501"],
+            [sys.executable, "-m", "streamlit", "run", str(root / "main_ui.py"), "--server.port", "8501"],
             cwd=str(root),
             check=True
         )

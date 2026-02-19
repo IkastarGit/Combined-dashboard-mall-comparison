@@ -1,1 +1,1 @@
-web: streamlit run railway_app.py --server.port $PORT --server.address 0.0.0.0
+web: streamlit run main_ui.py --server.port $PORT --server.address 0.0.0.0
