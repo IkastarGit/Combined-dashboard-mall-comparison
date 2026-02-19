@@ -5,22 +5,20 @@ Performs automated web searches with dynamic queries.
 Chrome is configured to NOT show "Chrome is being controlled by automated test software".
 """
 
+import sys
+import os
 import time
 from typing import List, Optional
 from urllib.parse import quote_plus, urlparse
 
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 
-import shutil
-
-try:
-    from webdriver_manager.chrome import ChromeDriverManager
-    _USE_WEBDRIVER_MANAGER = True
-except ImportError:
-    _USE_WEBDRIVER_MANAGER = False
+# Add parent directory so chrome_helper can be imported regardless of cwd
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from chrome_helper import make_chrome_driver, make_chrome_options
 
 from config import (
     AI_OVERVIEW_CLICK_SLEEP,
@@ -45,76 +43,12 @@ _CHROME_USER_AGENT = (
 )
 
 
-def get_chrome_binary() -> Optional[str]:
-    """Find Chromium binary path (critical for Linux/container environments)."""
-    import os
-    for path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]:
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def get_chrome_options(headless: Optional[bool] = None) -> Options:
-    opts = Options()
-    use_headless = headless if headless is not None else CHROME_HEADLESS
-
-    # Set Chromium binary explicitly (required in Linux/Railway containers)
-    chrome_bin = get_chrome_binary()
-    if chrome_bin:
-        opts.binary_location = chrome_bin
-
-    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
-    opts.add_experimental_option("useAutomationExtension", False)
-
-    opts.add_argument("--disable-blink-features=AutomationControlled")
-    # Required flags for Docker/Railway container environments
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-setuid-sandbox")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--disable-software-rasterizer")
-    opts.add_argument("--window-size=" + CHROME_WINDOW_SIZE)
-    opts.add_argument("--disable-infobars")
-    opts.add_argument("--disable-extensions")
-    opts.add_argument("--disable-notifications")
-    opts.add_argument("--remote-debugging-port=9222")
-
-    if use_headless:
-        opts.add_argument("--headless")
-        opts.add_argument("--user-agent=" + _CHROME_USER_AGENT)
-
-    return opts
-
-
 def create_driver(headless: Optional[bool] = None) -> webdriver.Chrome:
     """Create a Chrome WebDriver with stealth options."""
-    options = get_chrome_options(headless=headless)
-
-    # Use system chromedriver in containers; fall back to webdriver_manager locally
-    system_chromedriver = shutil.which("chromedriver") or "/usr/bin/chromedriver"
-    import os
-    if os.path.exists(system_chromedriver):
-        service = Service(system_chromedriver)
-    elif _USE_WEBDRIVER_MANAGER:
-        service = Service(ChromeDriverManager().install())
-    else:
-        service = Service()  # Let Selenium find it on PATH
-
-    driver = webdriver.Chrome(service=service, options=options)
+    use_headless = headless if headless is not None else CHROME_HEADLESS
+    driver = make_chrome_driver(headless=use_headless, user_agent=_CHROME_USER_AGENT)
     driver.set_page_load_timeout(CHROME_PAGE_LOAD_TIMEOUT)
     driver.implicitly_wait(CHROME_IMPLICIT_WAIT)
-
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {
-            "source": """
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            """
-        },
-    )
-
     return driver
 
 

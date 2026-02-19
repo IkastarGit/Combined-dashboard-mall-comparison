@@ -57,168 +57,31 @@ def save_cookies(driver):
 
 # ================= DRIVER =================
 def create_driver(headless: bool = True):
-    """Create and configure Chrome driver.
-    
-    Args:
-        headless: If True, run browser in headless mode (default: True)
-    
-    Returns:
-        webdriver.Chrome instance
-        
-    Raises:
-        Exception: If Chrome driver fails to start
-    """
-    global CHROME_PROFILE_DIR
+    """Create and configure Chrome driver using shared chrome_helper."""
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from chrome_helper import make_chrome_driver
 
-    # Ensure persistent Chrome profile directory exists (used on first attempt)
-    persistent_profile_ok = True
-    try:
-        os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
-    except Exception as e:
-        print(f"[WARN] Could not create Chrome profile directory: {e}")
-        persistent_profile_ok = False
-
-    # Fallback profile directory (safer fresh profile if persistent one crashes Chrome)
-    fallback_profile_dir = os.path.join(BASE_DIR, "chrome_profile_temp_ig")
-    try:
-        os.makedirs(fallback_profile_dir, exist_ok=True)
-    except Exception:
-        # If this also fails, Chrome will still start with its own default profile
-        fallback_profile_dir = None
-
-    def build_options(use_persistent_profile: bool) -> Options:
-        """Build Chrome Options for container + local compatibility."""
-        options = Options()
-
-        # Set Chromium binary explicitly (required in containers)
-        chrome_bin = get_chrome_binary()
-        if chrome_bin:
-            options.binary_location = chrome_bin
-
-        # Container-required flags
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-setuid-sandbox")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--disable-software-rasterizer")
-
-        if headless:
-            options.add_argument("--headless")
-            options.add_argument("--window-size=1920,1080")
-
-        # Profile dir only on Windows (Linux containers don't have C:\ paths)
-        import platform
-        if platform.system() == "Windows" and use_persistent_profile and persistent_profile_ok:
-            options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
-        elif platform.system() == "Windows" and fallback_profile_dir:
-            options.add_argument(f"--user-data-dir={fallback_profile_dir}")
-
-        # General stability options (copied from facebook_scraper.py)
-        options.add_argument("--disable-software-rasterizer")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-background-networking")
-        options.add_argument("--disable-background-timer-throttling")
-        options.add_argument("--disable-renderer-backgrounding")
-        options.add_argument("--disable-backgrounding-occluded-windows")
-        options.add_argument("--disable-ipc-flooding-protection")
-        # Use a fixed remote debugging port just like the Facebook scraper
-        options.add_argument("--remote-debugging-port=9222")
-
-        options.add_argument("--start-maximized")
-        options.add_argument("--disable-notifications")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option("useAutomationExtension", False)
-
-        # Set a realistic user agent (updated to match current Chrome version)
-        options.add_argument(
-            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-
-        # Additional preferences to make it look more like a real browser
-        prefs = {
-            "credentials_enable_service": False,
-            "profile.password_manager_enabled": False,
-            "profile.default_content_setting_values.notifications": 2,
-        }
-        options.add_experimental_option("prefs", prefs)
-        return options
-
-    try:
-        # Try to create driver with retry logic (like Facebook scraper)
-        max_retries = 3
-        use_persistent_profile = True  # first try with persistent profile, then fall back
-
-        for attempt in range(max_retries):
-            options = build_options(use_persistent_profile)
-            try:
-                driver = webdriver.Chrome(
-                    service=Service(get_chromedriver_path()),  # Use cached path for faster startup
-                    options=options,
-                )
-
-                driver.execute_cdp_cmd(
-                    "Page.addScriptToEvaluateOnNewDocument",
-                    {"source": "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"},
-                )
-                return driver
-            except Exception as e:
-                error_msg = str(e)
-
-                # If Chrome crashes with DevToolsActivePort issue, switch to fresh profile and retry
-                if "DevToolsActivePort" in error_msg or "crashed" in error_msg.lower():
-                    print(
-                        f"[WARN] Chrome failed to start (attempt {attempt + 1}/{max_retries}) "
-                        f"with profile: {'persistent' if use_persistent_profile else 'temp'}. "
-                        f"Error: {error_msg}"
-                    )
-                    # After first failure with persistent profile, always use fallback profile
-                    use_persistent_profile = False
-
-                    if attempt < max_retries - 1:
-                        time.sleep(2)
-                        continue
-
-                    # Last attempt failed with crash → raise friendly message
-                    raise Exception(
-                        "Chrome failed to start. This is often caused by:\n"
-                        "1. Chrome browser not installed or outdated\n"
-                        "2. ChromeDriver version mismatch with Chrome\n"
-                        "3. Another Chrome instance already running\n"
-                        "4. Corrupted Chrome profile directory\n"
-                        "5. Insufficient permissions\n\n"
-                        "Automatic mitigation tried a fresh temporary profile but Chrome still crashed.\n"
-                        "Try: Close all Chrome windows, update Chrome, or restart your computer.\n"
-                        f"Original error: {error_msg}"
-                    )
-
-                # Non-DevTools errors: just retry a couple of times, then surface original error
-                if attempt < max_retries - 1:
-                    print(
-                        f"[WARN] Chrome driver creation failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
-                        "Retrying..."
-                    )
-                    time.sleep(2)
-                else:
-                    raise
-
-    except Exception as e:
-        error_msg = str(e)
-        if "DevToolsActivePort" in error_msg or "crashed" in error_msg.lower():
-            raise Exception(
-                "Chrome failed to start. This is often caused by:\n"
-                "1. Chrome browser not installed or outdated\n"
-                "2. ChromeDriver version mismatch with Chrome\n"
-                "3. Another Chrome instance already running\n"
-                "4. Corrupted Chrome profile directory\n"
-                "5. Insufficient permissions\n\n"
-                "Try: Close all Chrome windows, delete any 'C:\\selenium_instagram_profile' folder, "
-                "update Chrome, or restart your computer.\n"
-                f"Original error: {error_msg}"
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            driver = make_chrome_driver(
+                headless=headless,
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
             )
-        else:
-            raise
+            return driver
+        except Exception as e:
+            error_msg = str(e)
+            if attempt < max_retries - 1:
+                print(f"[WARN] Chrome driver creation failed (attempt {attempt + 1}/{max_retries}): {error_msg}. Retrying...")
+                time.sleep(2)
+            else:
+                raise Exception(f"Failed to create Chrome driver after {max_retries} attempts: {error_msg}")
 
 # ================= LOGIN =================
 def instagram_login(driver, username: Optional[str] = None, password: Optional[str] = None, headless: bool = True):

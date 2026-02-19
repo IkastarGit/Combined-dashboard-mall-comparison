@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import csv
 import re
@@ -15,55 +16,22 @@ except ImportError:
     _BS_PARSER = "html.parser"
 
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-import shutil
+
+# Add parent directory so chrome_helper can be imported regardless of cwd
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from chrome_helper import make_chrome_driver
 
 # Config
 DEFAULT_OUTPUT_CSV = "mall_shops.csv"
 DEFAULT_OUTPUT_TEXT = "mall_shops.txt"
 HEADLESS = os.getenv("HEADLESS", "1") == "1"
 
-def get_chromedriver_path():
-    """Get ChromeDriver path — use system chromedriver in containers, fallback to webdriver_manager."""
-    # In Docker/Railway, chromedriver is at /usr/bin/chromedriver (installed via apt)
-    system_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
-    if __import__('os').path.exists(system_path):
-        return system_path
-    # Fallback: try webdriver_manager (only works locally)
-    try:
-        from webdriver_manager.chrome import ChromeDriverManager
-        return ChromeDriverManager().install()
-    except Exception:
-        return "chromedriver"
-
 
 def create_driver():
-    options = Options()
+    return make_chrome_driver(headless=HEADLESS)
 
-    # Set Chromium binary explicitly (required in containers)
-    import os as _os
-    for _path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]:
-        if _os.path.exists(_path):
-            options.binary_location = _path
-            break
-
-    if HEADLESS:
-        options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-setuid-sandbox")
-    options.add_argument("--disable-software-rasterizer")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--remote-debugging-port=9222")
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-
-    driver = webdriver.Chrome(
-        service=Service(get_chromedriver_path()),
-        options=options,
-    )
-    return driver
 
 
 def _extract_shop_names_from_attributes(soup):

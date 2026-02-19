@@ -100,107 +100,31 @@ def load_cookies(driver):
 
 
 def create_driver(headless: bool = True):
-    """Create and configure Chrome driver.
-    
-    Args:
-        headless: If True, run browser in headless mode (default: True)
-    
-    Returns:
-        webdriver.Chrome instance
-        
-    Raises:
-        Exception: If Chrome driver fails to start
-    """
-    options = Options()
+    """Create and configure Chrome driver using shared chrome_helper."""
+    # Add parent directory so chrome_helper can be imported
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from chrome_helper import make_chrome_driver
 
-    # Set Chromium binary explicitly (required in containers)
-    chrome_bin = get_chrome_binary()
-    if chrome_bin:
-        options.binary_location = chrome_bin
-
-    # Container-required flags (must always be set)
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-setuid-sandbox")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-software-rasterizer")
-
-    if headless:
-        options.add_argument("--headless")
-        options.add_argument("--window-size=1920,1080")
-
-    # Skip persistent profile in container (path C:\ doesn't exist on Linux)
-    import platform
-    if platform.system() != "Windows":
-        pass  # No --user-data-dir in containers
-    else:
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
-            options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
-        except Exception:
-            pass
-    
-    # Additional stability options for Windows
-    options.add_argument("--disable-software-rasterizer")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-background-networking")
-    options.add_argument("--disable-background-timer-throttling")
-    options.add_argument("--disable-renderer-backgrounding")
-    options.add_argument("--disable-backgrounding-occluded-windows")
-    options.add_argument("--disable-ipc-flooding-protection")
-    options.add_argument("--remote-debugging-port=9222")
-    
-    # Set a realistic user agent to avoid detection
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    
-    options.add_argument("--start-maximized")
-    options.add_argument("--disable-notifications")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-    
-    # Additional options to make it less detectable
-    prefs = {
-        "credentials_enable_service": False,
-        "profile.password_manager_enabled": False
-    }
-    options.add_experimental_option("prefs", prefs)
-
-    try:
-        # Try to create driver with retry logic
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                driver = webdriver.Chrome(
-                    service=Service(get_chromedriver_path()),  # Use cached path for faster startup
-                    options=options
-                )
-                
-                driver.execute_cdp_cmd(
-                    "Page.addScriptToEvaluateOnNewDocument",
-                    {"source": "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"}
-                )
-                return driver
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    print(f"Chrome driver creation failed (attempt {attempt + 1}/{max_retries}), retrying...")
-                    time.sleep(2)
-                else:
-                    raise Exception(f"Failed to create Chrome driver after {max_retries} attempts: {str(e)}")
-    except Exception as e:
-        error_msg = str(e)
-        if "DevToolsActivePort" in error_msg or "crashed" in error_msg.lower():
-            raise Exception(
-                f"Chrome failed to start. This is often caused by:\n"
-                f"1. Chrome browser not installed or outdated\n"
-                f"2. ChromeDriver version mismatch with Chrome\n"
-                f"3. Another Chrome instance already running\n"
-                f"4. Insufficient permissions\n\n"
-                f"Try: Close all Chrome windows, update Chrome, or restart your computer.\n"
-                f"Original error: {error_msg}"
+            driver = make_chrome_driver(
+                headless=headless,
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
             )
-        else:
-            raise
+            return driver
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"Chrome driver creation failed (attempt {attempt + 1}/{max_retries}), retrying...")
+                time.sleep(2)
+            else:
+                raise Exception(f"Failed to create Chrome driver after {max_retries} attempts: {e}")
 
 
 def is_noise_line(line: str) -> bool:
