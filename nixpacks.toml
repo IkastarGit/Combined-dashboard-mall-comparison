@@ -2,7 +2,7 @@
 nixPkgs = ["python311", "chromium", "chromedriver"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["python -m pip install --upgrade pip", "python -m pip install -r requirements.txt"]
 
 [start]
 cmd = "streamlit run railway_app.py --server.port $PORT --server.address 0.0.0.0"
