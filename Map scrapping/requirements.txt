@@ -2,13 +2,11 @@ streamlit
 easyocr
 sentence-transformers
 pandas
-opencv-python
+opencv-python-headless
 numpy
 requests
 Pillow
 rapidfuzz
 selenium
-selenium-wire
-undetected-chromedriver
 webdriver-manager
 blinker==1.7.0
