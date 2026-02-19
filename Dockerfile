@@ -7,7 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium-driver \
     libnss3 \
     libglib2.0-0 \
-    libxss1 \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
     libx11-xcb1 \
@@ -27,6 +26,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy application code
 COPY . .
+
+# Verify the app can be imported without errors before starting
+RUN python -c "import streamlit; print('Streamlit OK:', streamlit.__version__)"
 
 EXPOSE 8501
 
