@@ -17,7 +17,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+import shutil
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from dotenv import load_dotenv
 import pandas as pd
@@ -27,15 +27,23 @@ import json
 # Load environment variables
 load_dotenv()
 
-# Cache ChromeDriver path to speed up startup (only install once)
-_cached_chromedriver_path = None
-
 def get_chromedriver_path():
-    """Get ChromeDriver path, caching it to avoid re-downloading."""
-    global _cached_chromedriver_path
-    if _cached_chromedriver_path is None:
-        _cached_chromedriver_path = ChromeDriverManager().install()
-    return _cached_chromedriver_path
+    """Get system ChromeDriver path (container-safe)."""
+    system_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
+    if os.path.exists(system_path):
+        return system_path
+    try:
+        from webdriver_manager.chrome import ChromeDriverManager
+        return ChromeDriverManager().install()
+    except Exception:
+        return "chromedriver"
+
+def get_chrome_binary():
+    """Get Chromium binary path for containers."""
+    for path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]:
+        if os.path.exists(path):
+            return path
+    return None
 
 # XPATH used to locate post html-divs
 POST_XPATH = "//*[@class='html-div xdj266r x14z9mp xat24cr x1lziwak xexx8yu xyri2b x18d9i69 x1c1uobl']"
@@ -104,26 +112,34 @@ def create_driver(headless: bool = True):
         Exception: If Chrome driver fails to start
     """
     options = Options()
-    
-    # Ensure Chrome profile directory exists
-    try:
-        os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
-    except Exception as e:
-        print(f"Warning: Could not create Chrome profile directory: {e}")
-        # Use a temp directory in the current folder instead
-        import tempfile
-        profile_dir = os.path.join(BASE_DIR, "chrome_profile_temp")
-        os.makedirs(profile_dir, exist_ok=True)
-        options.add_argument(f"--user-data-dir={profile_dir}")
-    else:
-        options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
-    
+
+    # Set Chromium binary explicitly (required in containers)
+    chrome_bin = get_chrome_binary()
+    if chrome_bin:
+        options.binary_location = chrome_bin
+
+    # Container-required flags (must always be set)
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-setuid-sandbox")
+    options.add_argument("--single-process")
+    options.add_argument("--no-zygote")
+    options.add_argument("--disable-gpu")
+
     if headless:
-        options.add_argument("--headless=new")  # Use new headless mode
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
+        options.add_argument("--headless=new")
         options.add_argument("--window-size=1920,1080")
+
+    # Skip persistent profile in container (path C:\ doesn't exist on Linux)
+    import platform
+    if platform.system() != "Windows":
+        pass  # No --user-data-dir in containers
+    else:
+        try:
+            os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
+            options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
+        except Exception:
+            pass
     
     # Additional stability options for Windows
     options.add_argument("--disable-software-rasterizer")

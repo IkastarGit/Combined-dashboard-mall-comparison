@@ -12,22 +12,30 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from webdriver_manager.chrome import ChromeDriverManager
+import shutil
 from dotenv import load_dotenv
 import pandas as pd
 
 # Load environment variables
 load_dotenv()
 
-# Cache ChromeDriver path to speed up startup (only install once)
-_cached_chromedriver_path = None
-
 def get_chromedriver_path():
-    """Get ChromeDriver path, caching it to avoid re-downloading."""
-    global _cached_chromedriver_path
-    if _cached_chromedriver_path is None:
-        _cached_chromedriver_path = ChromeDriverManager().install()
-    return _cached_chromedriver_path
+    """Get system ChromeDriver path (container-safe)."""
+    system_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
+    if os.path.exists(system_path):
+        return system_path
+    try:
+        from webdriver_manager.chrome import ChromeDriverManager
+        return ChromeDriverManager().install()
+    except Exception:
+        return "chromedriver"
+
+def get_chrome_binary():
+    """Get Chromium binary path for containers."""
+    for path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]:
+        if os.path.exists(path):
+            return path
+    return None
 
 # ================= CONFIG =================
 BASE_DIR = os.path.dirname(__file__)
@@ -79,21 +87,31 @@ def create_driver(headless: bool = True):
         fallback_profile_dir = None
 
     def build_options(use_persistent_profile: bool) -> Options:
-        """Build Chrome Options, mirroring the stable Facebook driver config."""
+        """Build Chrome Options for container + local compatibility."""
         options = Options()
 
+        # Set Chromium binary explicitly (required in containers)
+        chrome_bin = get_chrome_binary()
+        if chrome_bin:
+            options.binary_location = chrome_bin
+
+        # Container-required flags
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-setuid-sandbox")
+        options.add_argument("--single-process")
+        options.add_argument("--no-zygote")
+        options.add_argument("--disable-gpu")
+
         if headless:
-            # New headless mode with common stability flags
             options.add_argument("--headless=new")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
 
-        # Profile directory: try persistent first, then safe temp profile
-        if use_persistent_profile and persistent_profile_ok:
+        # Profile dir only on Windows (Linux containers don't have C:\ paths)
+        import platform
+        if platform.system() == "Windows" and use_persistent_profile and persistent_profile_ok:
             options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
-        elif fallback_profile_dir:
+        elif platform.system() == "Windows" and fallback_profile_dir:
             options.add_argument(f"--user-data-dir={fallback_profile_dir}")
 
         # General stability options (copied from facebook_scraper.py)

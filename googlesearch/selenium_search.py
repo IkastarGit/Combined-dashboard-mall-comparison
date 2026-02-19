@@ -45,9 +45,23 @@ _CHROME_USER_AGENT = (
 )
 
 
+def get_chrome_binary() -> Optional[str]:
+    """Find Chromium binary path (critical for Linux/container environments)."""
+    import os
+    for path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]:
+        if os.path.exists(path):
+            return path
+    return None
+
+
 def get_chrome_options(headless: Optional[bool] = None) -> Options:
     opts = Options()
     use_headless = headless if headless is not None else CHROME_HEADLESS
+
+    # Set Chromium binary explicitly (required in Linux/Railway containers)
+    chrome_bin = get_chrome_binary()
+    if chrome_bin:
+        opts.binary_location = chrome_bin
 
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option("useAutomationExtension", False)
