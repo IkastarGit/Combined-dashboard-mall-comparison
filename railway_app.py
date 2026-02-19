@@ -76,17 +76,108 @@ st.markdown("""
     font-size: 0.9375rem;
     margin: 0;
 }
+
+/* Cards: replicated from main_ui.py */
+.project-card {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    background: #192734;
+    padding: 1.5rem 1.75rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 1rem;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.project-card:hover {
+    border-color: rgba(29,155,240,0.35);
+    background: #1c2d3d;
+}
+.project-card-info { width: 100%; }
+.project-card-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 0.5rem 0;
+    line-height: 1.3;
+}
+.project-card-desc {
+    color: #8b98a5;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    margin: 0;
+}
+.project-card-cta-container { width: 100%; margin-top: 0.25rem; }
+.project-card-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem 0.9rem;
+    background: #1d9bf0;
+    color: #fff !important;
+    border-radius: 9999px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.project-card-cta:hover {
+    background: #1a8cd8;
+    color: #fff !important;
+    transform: scale(1.04);
+    box-shadow: 0 0 0 4px rgba(29,155,240,0.25);
+}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <div class='dashboard-header'>
     <h1 class='dashboard-title'>Webresearch Combined Dashboard</h1>
-    <p class='dashboard-subtitle'>Select an application from the sidebar to begin.</p>
+    <p class='dashboard-subtitle'>Select an application below or from the sidebar to begin.</p>
 </div>
 """, unsafe_allow_html=True)
 
-with st.expander("📝 Mall & search inputs (optional — submit to pre-fill all three apps)", expanded=True):
+# App Cards Section (Fixing localhost links to relative production-friendly links)
+col1, col2, col3 = st.columns(3)
+
+apps = [
+    {
+        "title": "Store Opening Discovery",
+        "icon": "🔍",
+        "desc": "Find mall and store opening data with AI. Extract 2026 tenant and event info from the web.",
+        "link": "Store_Opening_Discovery" # Relative URL for Streamlit page
+    },
+    {
+        "title": "Mall AI Dashboard",
+        "icon": "🏬",
+        "desc": "Scrape mall directories and Facebook/Instagram. Compare data over time and generate AI insights.",
+        "link": "Mall_AI_Dashboard"
+    },
+    {
+        "title": "Map Visual Analysis",
+        "icon": "🗺️",
+        "desc": "Analyze mall map screenshots with OCR. Match tenants to your database and see gaps on the map.",
+        "link": "Map_Visual_Analysis"
+    }
+]
+
+for i, app in enumerate(apps):
+    with [col1, col2, col3][i]:
+        st.markdown(f"""
+        <div class='project-card'>
+            <div class='project-card-info'>
+                <div class='project-card-title'>{app['icon']} {app['title']}</div>
+                <div class='project-card-desc'>{app['desc']}</div>
+            </div>
+            <div class='project-card-cta-container'>
+                <a href='{app['link']}' target='_self' class='project-card-cta'>Open {app['title']}</a>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.markdown("---")
+
+with st.expander("📝 Mall & search inputs (optional — submit to pre-fill all three apps)", expanded=False):
     st.markdown("Enter data below and click **Submit** to save. The three apps use whatever was last submitted.")
     
     with st.form("shared_input_form"):
@@ -117,7 +208,7 @@ with st.expander("📝 Mall & search inputs (optional — submit to pre-fill all
                 "map_visual_url": (map_visual_url or "").strip(),
                 "num_posts_to_scrape": num_posts_to_scrape,
             })
-            st.success("Saved. Select an app from the sidebar to continue.")
+            st.success("Saved. Open any of the apps above to begin.")
 
 st.markdown("---")
 
@@ -169,4 +260,4 @@ with st.expander("🔗 Merge Mall Tenants with Excel Report", expanded=False):
     elif merge_btn and (not merge_csv or not merge_excel):
         st.warning("Please upload both the Mall Tenants CSV and the Excel report.")
 
-st.info("👈 Select an application from the sidebar start.")
+st.info("👈 You can also use the sidebar to navigate between applications.")
