@@ -4,12 +4,27 @@ Combined Dashboard - Railway Entry Point
 
 import json
 import sys
+import uuid
 from pathlib import Path
 import streamlit as st
 
 # Ports and app paths (ROOT = folder containing this script)
 ROOT = Path(__file__).resolve().parent
 SHARED_INPUT_FILE = ROOT / "shared_dashboard_input.json"
+DELIVERY_TOKEN_FILE = ROOT / "shared_dashboard_delivery_token.json"
+
+# Initialize delivery tokens for pre-filling sub-apps
+if "delivery_tokens" not in st.session_state:
+    st.session_state.delivery_tokens = {
+        "store_opening": str(uuid.uuid4()),
+        "mall_dashboard": str(uuid.uuid4()),
+        "map_dashboard": str(uuid.uuid4())
+    }
+    # Write to file so sub-apps can read them
+    try:
+        DELIVERY_TOKEN_FILE.write_text(json.dumps(st.session_state.delivery_tokens), encoding="utf-8")
+    except Exception:
+        pass
 
 def load_shared_input() -> dict:
     """Load mall/search input from shared JSON. Returns dict with empty strings if missing."""
@@ -140,20 +155,25 @@ st.markdown("""
 # App Cards Section (Fixing localhost links to relative production-friendly links)
 col1, col2, col3 = st.columns(3)
 
+_toks = st.session_state.get("delivery_tokens", {})
+
 apps = [
     {
+        "key": "store_opening",
         "title": "Store Opening Discovery",
         "icon": "🔍",
         "desc": "Find mall and store opening data with AI. Extract 2026 tenant and event info from the web.",
         "link": "Store_Opening_Discovery" # Relative URL for Streamlit page
     },
     {
+        "key": "mall_dashboard",
         "title": "Mall AI Dashboard",
         "icon": "🏬",
         "desc": "Scrape mall directories and Facebook/Instagram. Compare data over time and generate AI insights.",
         "link": "Mall_AI_Dashboard"
     },
     {
+        "key": "map_dashboard",
         "title": "Map Visual Analysis",
         "icon": "🗺️",
         "desc": "Analyze mall map screenshots with OCR. Match tenants to your database and see gaps on the map.",
@@ -163,6 +183,9 @@ apps = [
 
 for i, app in enumerate(apps):
     with [col1, col2, col3][i]:
+        # Include delivery token for pre-fill
+        tok = _toks.get(app["key"], "")
+        href = f"/{app['link']}?from_dashboard={tok}&app={app['key']}"
         st.markdown(f"""
         <div class='project-card'>
             <div class='project-card-info'>
@@ -170,7 +193,7 @@ for i, app in enumerate(apps):
                 <div class='project-card-desc'>{app['desc']}</div>
             </div>
             <div class='project-card-cta-container'>
-                <a href='{app['link']}' target='_self' class='project-card-cta'>Open {app['title']}</a>
+                <a href='{href}' target='_self' class='project-card-cta'>Open {app['title']}</a>
             </div>
         </div>
         """, unsafe_allow_html=True)
