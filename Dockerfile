@@ -3,6 +3,8 @@ FROM python:3.11-slim
 # Install wget and dependencies needed to download/install Chrome
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget ca-certificates gnupg curl unzip \
+    # Additional dependencies for Chrome
+    libu2f-udev \
     # Chrome shared library dependencies
     libglib2.0-0 libnss3 libnspr4 libdbus-1-3 \
     libatk1.0-0 libatk-bridge2.0-0 libcups2 \
@@ -16,7 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Google Chrome Stable (official, most reliable in Docker)
 RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -f install -y \
+    && apt-get update \
+    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
     && rm -f google-chrome-stable_current_amd64.deb \
     && rm -rf /var/lib/apt/lists/*
 
