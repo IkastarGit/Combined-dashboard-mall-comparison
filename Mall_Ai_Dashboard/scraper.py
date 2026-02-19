@@ -17,37 +17,42 @@ except ImportError:
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+import shutil
 
 # Config
 DEFAULT_OUTPUT_CSV = "mall_shops.csv"
 DEFAULT_OUTPUT_TEXT = "mall_shops.txt"
 HEADLESS = os.getenv("HEADLESS", "1") == "1"
 
-# Cache ChromeDriver path to speed up startup (only install once)
-_cached_chromedriver_path = None
-
 def get_chromedriver_path():
-    """Get ChromeDriver path, caching it to avoid re-downloading."""
-    global _cached_chromedriver_path
-    if _cached_chromedriver_path is None:
-        _cached_chromedriver_path = ChromeDriverManager().install()
-    return _cached_chromedriver_path
+    """Get ChromeDriver path — use system chromedriver in containers, fallback to webdriver_manager."""
+    # In Docker/Railway, chromedriver is at /usr/bin/chromedriver (installed via apt)
+    system_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
+    if __import__('os').path.exists(system_path):
+        return system_path
+    # Fallback: try webdriver_manager (only works locally)
+    try:
+        from webdriver_manager.chrome import ChromeDriverManager
+        return ChromeDriverManager().install()
+    except Exception:
+        return "chromedriver"
 
 
 def create_driver():
     options = Options()
     if HEADLESS:
-        # new headless mode flag is supported in newer Chrome builds
         options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-setuid-sandbox")
+    options.add_argument("--single-process")
+    options.add_argument("--no-zygote")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
     driver = webdriver.Chrome(
-        service=Service(get_chromedriver_path()),  # Use cached path for faster startup
+        service=Service(get_chromedriver_path()),
         options=options,
     )
     return driver

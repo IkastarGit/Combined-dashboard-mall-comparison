@@ -14,11 +14,13 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 
+import shutil
+
 try:
     from webdriver_manager.chrome import ChromeDriverManager
-    USE_WEBDRIVER_MANAGER = True
+    _USE_WEBDRIVER_MANAGER = True
 except ImportError:
-    USE_WEBDRIVER_MANAGER = False
+    _USE_WEBDRIVER_MANAGER = False
 
 from config import (
     AI_OVERVIEW_CLICK_SLEEP,
@@ -44,25 +46,19 @@ _CHROME_USER_AGENT = (
 
 
 def get_chrome_options(headless: Optional[bool] = None) -> Options:
-    """
-    Build Chrome options that hide automation indicators.
-
-    - Removes "Chrome is being controlled by automated test software" banner
-    - Disables automation extension flag
-    - Reduces detection via blink features
-    - In headless mode: overrides user-agent (Google detects HeadlessChrome otherwise)
-    """
     opts = Options()
     use_headless = headless if headless is not None else CHROME_HEADLESS
 
-    # Hide "Chrome is being controlled by automated test software"
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option("useAutomationExtension", False)
 
-    # Reduce automation fingerprint
     opts.add_argument("--disable-blink-features=AutomationControlled")
+    # Required flags for running Chrome in Docker / Railway containers
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-setuid-sandbox")
+    opts.add_argument("--single-process")
+    opts.add_argument("--no-zygote")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--window-size=" + CHROME_WINDOW_SIZE)
     opts.add_argument("--disable-infobars")
@@ -71,7 +67,6 @@ def get_chrome_options(headless: Optional[bool] = None) -> Options:
 
     if use_headless:
         opts.add_argument("--headless=new")
-        # Google detects "HeadlessChrome" in user-agent and withholds AI Overview
         opts.add_argument("--user-agent=" + _CHROME_USER_AGENT)
 
     return opts
@@ -81,16 +76,20 @@ def create_driver(headless: Optional[bool] = None) -> webdriver.Chrome:
     """Create a Chrome WebDriver with stealth options."""
     options = get_chrome_options(headless=headless)
 
-    if USE_WEBDRIVER_MANAGER:
+    # Use system chromedriver in containers; fall back to webdriver_manager locally
+    system_chromedriver = shutil.which("chromedriver") or "/usr/bin/chromedriver"
+    import os
+    if os.path.exists(system_chromedriver):
+        service = Service(system_chromedriver)
+    elif _USE_WEBDRIVER_MANAGER:
         service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
     else:
-        driver = webdriver.Chrome(options=options)
+        service = Service()  # Let Selenium find it on PATH
 
+    driver = webdriver.Chrome(service=service, options=options)
     driver.set_page_load_timeout(CHROME_PAGE_LOAD_TIMEOUT)
     driver.implicitly_wait(CHROME_IMPLICIT_WAIT)
 
-    # Override navigator.webdriver (sites check this to detect automation)
     driver.execute_cdp_cmd(
         "Page.addScriptToEvaluateOnNewDocument",
         {
