@@ -9,12 +9,10 @@ openpyxl>=3.1.0
 python-dotenv>=1.0.0
 python-docx
 duckduckgo-search
-selenium-wire>=5.1.0
 opencv-python-headless
 numpy
 Pillow
 rapidfuzz
-undetected-chromedriver
 blinker==1.7.0
 google-genai>=1.0.0
 openai>=1.0.0

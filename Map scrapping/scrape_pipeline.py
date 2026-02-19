@@ -1,83 +1,37 @@
 import json
 import os
+import sys
 import time
 import requests
 import numpy as np
-from seleniumwire.undetected_chromedriver import Chrome, ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# Use shared chrome_helper for reliable Chrome setup in containers
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from chrome_helper import make_chrome_driver
+
 # Configuration
 OUTPUT_FILE = os.path.join(os.path.expanduser("~"), "Downloads", "tenants_detailed.json")
 CHROME_PROFILE_DIR = os.path.join(os.getcwd(), "chrome_profile")
 
-def get_fresh_options(headless=True):
-    options = ChromeOptions()
-
-    # Set Chromium binary explicitly (required in Linux/Railway containers)
-    import platform
-    for _path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]:
-        if os.path.exists(_path):
-            options.binary_location = _path
-            break
-
-    if headless:
-        options.add_argument("--headless")
-
-    # Only use user-data-dir on Windows (C:\ paths don't exist on Linux containers)
-    if platform.system() == "Windows":
-        options.add_argument(f"--user-data-dir={CHROME_PROFILE_DIR}")
-
-    options.add_argument("--start-maximized")
-    options.add_argument("--disable-notifications")
-
-    # Container-required flags
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-setuid-sandbox")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-software-rasterizer")
-
-    options.add_argument("--ignore-certificate-errors")
-    options.add_argument("--allow-running-insecure-content")
-    options.add_argument("--proxy-server='direct://'")
-    options.add_argument("--proxy-bypass-list=*")
-    return options
 
 def create_driver(headless=True):
-    os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
-
-    # Selenium-wire specific setup to bypass proxy detection
-    sw_options = {
-        'verify_ssl': False, # Avoid cert strikes seen in screenshot
-        'connection_timeout': None,
-        'request_storage': 'memory'
-    }
-
+    """
+    Create Chrome driver using shared chrome_helper.
+    Previously used seleniumwire.undetected_chromedriver which tried to download
+    a patched ChromeDriver at runtime — that always fails in Railway containers.
+    """
     try:
-        # Explicitly request version 144 to match system browser
-        print(f"Starting Chrome (Version 144, Headless={headless})...", flush=True)
-        driver = Chrome(options=get_fresh_options(headless=headless), seleniumwire_options=sw_options, version_main=144)
+        return make_chrome_driver(headless=headless)
     except Exception as e:
-        print(f"Initial Driver Init Failed: {e}. Retrying with auto-detection fallback...")
-        try:
-            # Re-creating options is mandatory to avoid "RuntimeError"
-            driver = Chrome(options=get_fresh_options(headless=headless), seleniumwire_options=sw_options)
-        except Exception as e2:
-            print(f"Fatal: Could not initialize driver: {e2}")
-            return None
-    
-    # Hide automation signatures
-    try:
-        driver.execute_cdp_cmd(
-            "Page.addScriptToEvaluateOnNewDocument",
-            {"source": "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"}
-        )
-    except: pass
+        print(f"Fatal: Could not initialize driver: {e}")
+        return None
 
-    return driver
 
 def solve_affine(pts):
     """
