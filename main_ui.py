@@ -321,6 +321,56 @@ with st.expander("📝 Mall & search inputs (optional — submit to pre-fill all
 
 st.markdown("---")
 
+# Merge Mall Tenants CSV with Excel Report (from Mall AI Dashboard + Map Scraping)
+with st.expander("🔗 Merge Mall Tenants with Excel Report", expanded=False):
+    st.markdown(
+        "Upload the **Mall Tenants CSV** (from Mall AI Dashboard / map scraping) and the **Excel report** (mall research output). "
+        "The merge will: replace **Proposed Floor Number** with the mall **floor**, fill **Proposed Shop Number** with **location_id**, "
+        "and add **Latitude** and **Longitude** columns next to Proposed Shop Number, matching rows by tenant name."
+    )
+    col_merge_1, col_merge_2 = st.columns(2)
+    with col_merge_1:
+        merge_csv = st.file_uploader(
+            "Mall Tenants CSV (e.g. mall_tenants_full.csv)",
+            type=["csv"],
+            key="merge_tenant_csv",
+            help="CSV with columns: name, location_id, floor, latitude, longitude",
+        )
+    with col_merge_2:
+        merge_excel = st.file_uploader(
+            "Excel Report (e.g. mall_research_output.xlsx)",
+            type=["xlsx"],
+            key="merge_excel_report",
+            help="Excel with sheet 'Existing Tennent Research'",
+        )
+    merge_btn = st.button("Merge and Download Excel", type="primary", key="merge_download_btn")
+    if merge_btn and merge_csv and merge_excel:
+        try:
+            from merge_tenant_excel import merge_tenant_csv_with_excel
+            csv_bytes = merge_csv.read()
+            excel_bytes = merge_excel.read()
+            out_bytes = merge_tenant_csv_with_excel(csv_bytes, excel_bytes)
+            st.session_state["merged_excel_bytes"] = out_bytes
+            st.success("Merge complete. Click **Download merged Excel** below to save.")
+        except Exception as e:
+            st.session_state.pop("merged_excel_bytes", None)
+            st.error(f"Merge failed: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+    elif merge_btn and (not merge_csv or not merge_excel):
+        st.warning("Please upload both the Mall Tenants CSV and the Excel report.")
+
+    if st.session_state.get("merged_excel_bytes"):
+        st.download_button(
+            label="Download merged Excel",
+            data=st.session_state["merged_excel_bytes"],
+            file_name="mall_research_output_merged.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_merged_excel",
+        )
+
+st.markdown("---")
+
 # Vertical list of cards (include one-time token per app so pre-fill only when opened from here; refresh in app won't pre-fill)
 _tokens = st.session_state.get("delivery_tokens", {})
 for app in APPS:
