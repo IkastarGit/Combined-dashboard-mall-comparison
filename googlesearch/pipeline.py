@@ -263,52 +263,105 @@ def run_pipeline(
                 else:
                     print(f"[Step 1b] No official mall website found for «{mall_from_query}».")
 
-        # --- Step 2: DuckDuckGo search (browser-free) ---
-        print("[Step 2] Running DuckDuckGo search (no browser required)...")
+        # --- Step 2: Search (Selenium Search is primary to support AI Overviews) ---
+        print("[Step 2] Running Search (prioritizing Selenium for AI Overviews)...")
+        ai_overview_sources: List[Dict[str, Any]] = []  # [{query, text, source_url, source_title}]
+        
         for q in queries:
-            results = search_duckduckgo(q, max_results=max_results_per_search)
+            results = []
             
-            # Fallback 1: Official Google Custom Search JSON API (most reliable)
+            # 1. Try Selenium Google Search first (provides AI Overview)
+            try:
+                from selenium_search import search_google, extract_ai_overview
+                results = search_google(q, max_results=max_results_per_search, driver=driver)
+                
+                # Check for shared driver or own driver needs (driver is None here initially)
+                if driver is None: 
+                    # We might want to persist driver for AI overview extraction
+                    driver = _try_get_selenium_driver()
+                    if driver:
+                        results = search_google(q, max_results=max_results_per_search, driver=driver)
+                
+                if driver:
+                    try:
+                        ai_data = extract_ai_overview(driver, expand_first=True)
+                        ai_text = (ai_data.get("text") or "").strip()
+                        if ai_text:
+                            ai_overview_sources.append({
+                                "query": q,
+                                "text": ai_text,
+                                "source_url": driver.current_url,
+                                "source_title": f"Google AI Overview: {q[:60]}",
+                            })
+                            print(f"  [AI Overview] Extracted from Google: {len(ai_text)} chars")
+                    except Exception as e:
+                        print(f"  [AI Overview] Skip: {e}")
+            except Exception as e:
+                print(f"  [Selenium] Search failed for '{q[:30]}': {e}")
+            
+            # 2. Fallback to Official Google API
             if not results:
-                print(f"  Query '{q[:50]}...' -> 0 results from DuckDuckGo. Trying Official Google Search API fallback...")
+                print(f"  [Fallback] Trying Official Google Search API for: {q[:30]}...")
                 try:
                     from search_fallback import search_via_google_api
                     results = search_via_google_api(q, max_results=max_results_per_search)
                 except Exception as e:
-                    print(f"  [Google API Fallback] Error: {e}")
+                    print(f"  [Google API] Fallback error: {e}")
             
-            # Fallback 2: Selenium Google Search (unreliable on cloud/Railway due to CAPTCHA)
+            # 3. Fallback to DuckDuckGo (Resilient browser-free)
             if not results:
-                print(f"  Query '{q[:50]}...' -> 0 results still. Trying Selenium Google Search (last resort)...")
+                print(f"  [Fallback] Trying DuckDuckGo for: {q[:30]}...")
                 try:
-                    from selenium_search import search_google
-                    # Use the shared driver if already created, or search_google will create its own
-                    results = search_google(q, max_results=max_results_per_search, driver=driver)
+                    results = search_duckduckgo(q, max_results=max_results_per_search)
                 except Exception as e:
-                    print(f"  [Selenium Fallback] Error: {e}")
-                    results = []
-            
-            print(f"  Query '{q[:50]}...' -> {len(results)} result(s)")
+                    print(f"  [DDG] Fallback error: {e}")
+
+            print(f"  Results for '{q[:40]}...' -> {len(results)} item(s)")
             for r in results:
                 link = r.get("link") or ""
                 if link and link not in seen_links:
                     seen_links.add(link)
                     all_results.append(r)
-            if len(all_results) >= max_links_per_query * 3:  # cap total links
+            if len(all_results) >= max_links_per_query * 3:
                 break
 
-        print(f"[Step 2] Total unique links to process: {len(all_results)}")
-        if not all_results:
-            print("[FAIL] No search results returned from DuckDuckGo, API, or Selenium.")
-            # Final debug snapshot if we have a driver
+        print(f"[Step 2] Unique items to process: {len(all_results)} | AI Overviews: {len(ai_overview_sources)}")
+        
+        if not all_results and not ai_overview_sources:
+            print("[FAIL] No search results from any method.")
             if driver:
                 try:
-                    debug_path = os.path.join(out_dir.parent, "pipeline_fail_debug.png")
-                    driver.save_screenshot(debug_path)
+                    debug_path = os.path.join(out_dir.parent if out_dir.exists() else Path.cwd(), "pipeline_fail_debug.png")
+                    driver.save_screenshot(str(debug_path))
                     print(f"  [Pipeline] Saved debug screenshot to {debug_path}")
-                except Exception:
-                    pass
+                except Exception: pass
             return {"store_openings": [], "vacated_tenants": [], "temporary_events": [], "latest_updates": [], "extracted_text_files": []}
+
+        # Process Google AI Overview text if found
+        for ai_src in ai_overview_sources:
+            file_index += 1
+            text = ai_src.get("text") or ""
+            link = ai_src.get("source_url") or ""
+            title = ai_src.get("source_title") or "Google AI Overview"
+            if not text: continue
+            
+            print(f"\n  [AI Source {file_index}] {title[:60]}...")
+            result = analyze_extracted_text(text, source_url=link, source_title=title, skip_relevance_check=True, debug=True)
+            
+            # Merge results
+            for row in result.get("store_openings") or []: structured_rows.append(row)
+            for row in result.get("vacated_tenants") or []: vacated_tenants_list.append(row)
+            for row in result.get("temporary_events") or []: temporary_events_list.append(row)
+            if result.get("latest_updates"): latest_updates_list.append(result["latest_updates"])
+            
+            # Save file
+            if save_extracted_text:
+                out_dir.mkdir(exist_ok=True)
+                slug = _sanitize_filename(ai_src.get("query", "ai_overview"))
+                filename = f"extract_ai_{file_index}_{slug}.txt"
+                content = f"URL: {link}\nTitle: {title}\n" + "=" * 70 + "\n\n" + text
+                with open(out_dir / filename, "w", encoding="utf-8") as f:
+                    f.write(content)
 
         # Limit how many pages we fetch
         to_process = all_results[: max_links_per_query * len(queries)]

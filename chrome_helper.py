@@ -70,9 +70,9 @@ def make_chrome_options(
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-software-rasterizer")
 
-    # --- Headless (legacy flag — most stable across Chrome/Chromium versions) ---
+    # --- Headless (new flag is more stealthy and stable) ---
     if headless:
-        opts.add_argument("--headless")
+        opts.add_argument("--headless=new")
 
     # --- Writable user-data directory ---
     # In Railway, we prefer a persistent volume if available (usually /data)

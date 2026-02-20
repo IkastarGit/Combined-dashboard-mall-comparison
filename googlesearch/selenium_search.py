@@ -51,6 +51,21 @@ def create_driver(headless: Optional[bool] = None) -> webdriver.Chrome:
     """Create a Chrome WebDriver with stealth options."""
     use_headless = headless if headless is not None else CHROME_HEADLESS
     driver = make_chrome_driver(headless=use_headless, user_agent=_CHROME_USER_AGENT)
+    
+    # Override navigator.webdriver (extra layer on top of selenium-stealth)
+    try:
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {
+                "source": """
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                """
+            },
+        )
+    except Exception: pass
+
     driver.set_page_load_timeout(CHROME_PAGE_LOAD_TIMEOUT)
     driver.implicitly_wait(CHROME_IMPLICIT_WAIT)
     return driver
