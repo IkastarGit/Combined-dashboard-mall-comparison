@@ -50,15 +50,15 @@ venv.bak/
 *.ipynb
 
 # Selenium/Chrome
-*.pkl
-fb_cookies.pkl
-chrome_profile_temp/
-C:/temp/ig_scraper_*/
-C:/selenium_chrome_profile/
-*.png
-*.html
-fb_login_debug.png
-fb_login_page.html
+# *.pkl
+# fb_cookies.pkl
+# chrome_profile_temp/
+# C:/temp/ig_scraper_*/
+# C:/selenium_chrome_profile/
+# *.png
+# *.html
+# fb_login_debug.png
+# fb_login_page.html
 
 # Logs
 *.log
