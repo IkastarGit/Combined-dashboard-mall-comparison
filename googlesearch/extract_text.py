@@ -125,6 +125,14 @@ def extract_clean_text(html: str, url: str = "") -> str:
         key = line[:80]
         if key in seen:
             continue
+        
+        # Skip lines that look like base64 or binary junk
+        # (Very long lines with no spaces, or lines with too many symbols)
+        if len(line) > 60 and " " not in line:
+            continue
+        if len(line) > 100 and line.count(" ") / len(line) < 0.05: # Very few spaces
+            continue
+            
         seen.add(key)
         lines.append(line)
 

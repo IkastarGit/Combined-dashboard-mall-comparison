@@ -220,22 +220,44 @@ def extract_shops_from_text(cleaned_text: str, url: str = "") -> list:
     if not cleaned_text or len(cleaned_text.strip()) < 50:
         return []
     
-    # Truncate text if too long (Gemini 1.5 Flash can handle up to 1M tokens, but we'll limit to 100K chars for safety)
-    original_length = len(cleaned_text)
-    max_text_length = 100000  # Gemini can handle much more text
+    # Chunking logic to handle large texts (avoiding truncation)
+    # We use chunks of 50,000 characters to ensure the model doesn't lose focus
+    # and to stay within token limits for both input and output.
+    chunk_size = 50000
+    all_shops = []
     
-    if len(cleaned_text) > max_text_length:
-        cleaned_text = cleaned_text[:max_text_length] + "\n... (text truncated)"
-        print(f"Text truncated to {max_text_length} characters (original: {original_length} chars)")
+    # Split text into lines to avoid cutting in the middle of a shop entry
+    text_lines = cleaned_text.splitlines()
+    current_chunk = []
+    current_length = 0
     
-    prompt = f"""You are an expert data extraction assistant specializing in extracting shop/store information from mall website text.
+    chunks = []
+    for line in text_lines:
+        if current_length + len(line) + 1 > chunk_size and current_chunk:
+            chunks.append("\n".join(current_chunk))
+            current_chunk = [line]
+            current_length = len(line)
+        else:
+            current_chunk.append(line)
+            current_length += len(line) + 1
+            
+    if current_chunk:
+        chunks.append("\n".join(current_chunk))
+        
+    print(f"Processing {len(chunks)} chunks of text for shop extraction (Total characters: {len(cleaned_text)})")
+    
+    for i, chunk in enumerate(chunks):
+        if len(chunks) > 1:
+            print(f"  Processing chunk {i+1}/{len(chunks)}...")
+            
+        prompt = f"""You are an expert data extraction assistant specializing in extracting shop/store information from mall website text.
 
-TASK: Extract ALL shop names, stores, retailers, and businesses from the following mall website text. Be thorough and comprehensive.
+TASK: Extract ALL shop names, stores, retailers, and businesses from the following mall website text (Part {i+1} of {len(chunks)}). Be thorough and comprehensive.
 
 Website URL (for context): {url}
 
 Text from website:
-{cleaned_text}
+{chunk}
 
 INSTRUCTIONS:
 1. Carefully read through the entire text.
@@ -279,62 +301,51 @@ Where:
 - Floor: floor/level info if found (e.g. "Ground Floor", "Level 2", "Food Court"), else empty string.
 - ImageURL: image URL if found, else empty string.
 
-EXAMPLE (FORMAT ONLY):
-Jewellery Shop | +0452 2555110 | Ground Floor | 
-Candere | +91 99526 11220 | Ground Floor | 
+Return ONLY the list of shops, one per line, using the exact pipe format."""
 
-CRITICAL:
-- Do NOT wrap the output in JSON.
-- Do NOT add bullets, numbering, or explanations.
-- Do NOT add headers or labels.
-- Return ONLY the list of shops, one per line, using the exact pipe format."""
+        # Call OpenAI (plain text response)
+        raw = _call_openai_chat(
+            prompt,
+            temperature=0.1,
+            max_tokens=8192,
+            response_format=None,
+            timeout_seconds=120,
+        )
 
-    # Call OpenAI (plain text response)
-    raw = _call_openai_chat(
-        prompt,
-        temperature=0.1,
-        max_tokens=8192,
-        response_format=None,
-        timeout_seconds=120,
-    )
+        if not raw:
+            print(f"Warning: Empty response from LLM for chunk {i+1}")
+            continue
 
-    if not raw:
-        print("Warning: Empty response from LLM when extracting shops from text")
-        return []
+        try:
+            # Parse plain-text pipe-separated lines into shop dicts.
+            lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+            for line in lines:
+                if "|" not in line:
+                    continue
+                parts = [p.strip() for p in line.split("|")]
+                if not parts:
+                    continue
+                name = parts[0]
+                if not name or len(name) < 2:
+                    continue
 
-    try:
-        # Parse plain-text pipe-separated lines into shop dicts.
-        # IMPORTANT: do NOT remove duplicates – return exactly what the AI extracted.
-        shops = []
-        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-        for line in lines:
-            # Skip obvious non-data lines if the model misbehaves
-            if "|" not in line:
-                continue
-            parts = [p.strip() for p in line.split("|")]
-            if not parts:
-                continue
-            name = parts[0]
-            if not name or len(name) < 2:
-                continue
+                phone = parts[1] if len(parts) > 1 else ""
+                floor = parts[2] if len(parts) > 2 else ""
+                image_url = parts[3] if len(parts) > 3 else ""
 
-            phone = parts[1] if len(parts) > 1 else ""
-            floor = parts[2] if len(parts) > 2 else ""
-            image_url = parts[3] if len(parts) > 3 else ""
+                all_shops.append({
+                    "shop_name": name,
+                    "phone": phone,
+                    "floor": floor,
+                    "image_url": image_url,
+                })
+        except Exception as e:
+            print(f"Warning: Error parsing shops from chunk {i+1}: {str(e)}")
 
-            shops.append({
-                "shop_name": name,
-                "phone": phone,
-                "floor": floor,
-                "image_url": image_url,
-            })
-        
-        # Return raw list with possible duplicates, as requested.
-        return shops
-
-    except Exception as e:
-        print(f"Warning: Error extracting shops from text using LLM: {str(e)}")
-        return []
+    # Remove duplicates if any were somehow introduced or if they appear in multiple chunks 
+    # (though instruction says don't de-duplicate if they are separate entries on page)
+    # We return the raw collected list as requested originally to keep consistency.
+    return all_shops
 
 
 def extract_coming_soon_shops_from_text(cleaned_text: str, url: str = "") -> list:
@@ -350,21 +361,40 @@ def extract_coming_soon_shops_from_text(cleaned_text: str, url: str = "") -> lis
     if not cleaned_text or len(cleaned_text.strip()) < 50:
         return []
     
-    # Truncate text if too long
-    original_length = len(cleaned_text)
-    max_text_length = 100000
-    if len(cleaned_text) > max_text_length:
-        cleaned_text = cleaned_text[:max_text_length] + "\n... (text truncated)"
-        print(f"Text truncated to {max_text_length} characters for coming soon extraction")
+    # Chunking logic for large texts
+    chunk_size = 50000
+    all_coming_soon = []
     
-    prompt = f"""You are an expert data extraction assistant specializing in identifying "coming soon" shops, kiosks, and businesses from mall website text.
+    text_lines = cleaned_text.splitlines()
+    current_chunk = []
+    current_length = 0
+    chunks = []
+    
+    for line in text_lines:
+        if current_length + len(line) + 1 > chunk_size and current_chunk:
+            chunks.append("\n".join(current_chunk))
+            current_chunk = [line]
+            current_length = len(line)
+        else:
+            current_chunk.append(line)
+            current_length += len(line) + 1
+    if current_chunk:
+        chunks.append("\n".join(current_chunk))
+        
+    print(f"Processing {len(chunks)} chunks for coming soon extraction (Total characters: {len(cleaned_text)})")
+
+    for i, chunk in enumerate(chunks):
+        if len(chunks) > 1:
+            print(f"  Processing chunk {i+1}/{len(chunks)}...")
+            
+        prompt = f"""You are an expert data extraction assistant specializing in identifying "coming soon" shops, kiosks, and businesses from mall website text (Part {i+1} of {len(chunks)}).
 
 TASK: Extract ALL shops, stores, kiosks, retailers, and businesses that are marked as "coming soon", "opening soon", "opening", "under construction", "opening in [date]", or similar future opening indicators.
 
 Website URL (for context): {url}
 
 Text from website:
-{cleaned_text}
+{chunk}
 
 INSTRUCTIONS:
 1. Carefully read through the entire text
@@ -407,50 +437,43 @@ CRITICAL EXTRACTION RULES:
 
 Be thorough and extract all coming soon shops, kiosks, and businesses you can find in the text."""
 
-    # Call OpenAI in JSON mode
-    raw = _call_openai_chat(
-        prompt,
-        temperature=0.1,
-        max_tokens=8192,
-        response_format="json_object",
-        timeout_seconds=120,
-    )
+        # Call OpenAI in JSON mode
+        raw = _call_openai_chat(
+            prompt,
+            temperature=0.1,
+            max_tokens=8192,
+            response_format="json_object",
+            timeout_seconds=120,
+        )
 
-    if not raw:
-        print("Warning: Empty response from AI when extracting coming soon shops")
-        return []
+        if not raw:
+            print(f"Warning: Empty response from AI for chunk {i+1}")
+            continue
 
-    try:
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict) and "coming_soon_shops" in data:
+                shops_list = data["coming_soon_shops"]
+                if isinstance(shops_list, list):
+                    for shop_name in shops_list:
+                        if isinstance(shop_name, str):
+                            shop_name = shop_name.strip()
+                            if shop_name and len(shop_name) >= 2:
+                                if shop_name.lower() not in ["coming soon", "opening soon", "opening", "coming"]:
+                                    all_coming_soon.append(shop_name)
+        except Exception as e:
+            print(f"Warning: Error parsing coming soon shops from chunk {i+1}: {str(e)}")
 
-        # Extract coming soon shops from response
-        coming_soon_shops = []
-        if isinstance(data, dict) and "coming_soon_shops" in data:
-            shops_list = data["coming_soon_shops"]
-            if isinstance(shops_list, list):
-                for shop_name in shops_list:
-                    if isinstance(shop_name, str):
-                        shop_name = shop_name.strip()
-                        if shop_name and len(shop_name) >= 2:
-                            # Skip if it's just "coming soon" or "opening soon" without a shop name
-                            if shop_name.lower() in ["coming soon", "opening soon", "opening", "coming"]:
-                                continue
-                            coming_soon_shops.append(shop_name)
-        
-        # Remove duplicates (case-insensitive)
-        seen = set()
-        unique_shops = []
-        for shop in coming_soon_shops:
-            name_key = shop.lower()
-            if name_key not in seen:
-                seen.add(name_key)
-                unique_shops.append(shop)
-        
-        return unique_shops
-
-    except Exception as e:
-        print(f"Warning: Error extracting coming soon shops from text using AI: {str(e)}")
-        return []
+    # Remove duplicates (case-insensitive)
+    seen = set()
+    unique_shops = []
+    for shop in all_coming_soon:
+        name_key = shop.lower()
+        if name_key not in seen:
+            seen.add(name_key)
+            unique_shops.append(shop)
+    
+    return unique_shops
 
 
 def validate_shop_names(shop_names: list) -> list:
