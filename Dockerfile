@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcomposite1 libxdamage1 libxext6 libxfixes3 \
     libxrandr2 libgbm1 libpango-1.0-0 libcairo2 \
     libatspi2.0-0 libx11-xcb1 libxi6 libxtst6 libxrender1 \
+    libgtk-3-0 libasound2 \
     fonts-liberation fontconfig \
     && rm -rf /var/lib/apt/lists/*
 

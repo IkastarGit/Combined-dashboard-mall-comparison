@@ -76,9 +76,16 @@ def make_chrome_options(
 
     # --- Writable user-data directory ---
     # In Railway, we prefer a persistent volume if available (usually /data)
-    default_user_data = "/tmp/chrome-user-data"
+    # However, if multiple Chrome instances share the same user-data-dir, they will crash.
+    # We use a subfolder per process/thread if many are running.
+    import uuid
+    instance_id = str(uuid.uuid4())[:8]
+    
+    default_user_data = f"/tmp/chrome-user-data-{instance_id}"
     if os.path.exists("/data") and os.access("/data", os.W_OK):
-        default_user_data = "/data/chrome-user-data"
+        # Even with persistent /data, we use a unique subfolder to avoid lock errors
+        # if multiple scrapers run at the exact same time.
+        default_user_data = f"/data/chrome-user-data-{instance_id}"
         
     chrome_user_data = os.environ.get("CHROME_USER_DATA_DIR", default_user_data)
     os.makedirs(chrome_user_data, exist_ok=True)
