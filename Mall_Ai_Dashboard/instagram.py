@@ -57,6 +57,21 @@ def save_cookies(driver):
         # Silently fail - cookies are optional
         pass
 
+def load_cookies(driver):
+    """Load cookies from file."""
+    if not os.path.exists(COOKIE_FILE):
+        return False
+    try:
+        with open(COOKIE_FILE, "rb") as f:
+            cookies = pickle.load(f)
+            for cookie in cookies:
+                driver.add_cookie(cookie)
+        print("[INFO] Instagram cookies loaded successfully")
+        return True
+    except Exception as e:
+        print(f"[WARN] Failed to load Instagram cookies: {e}")
+        return False
+
 # ================= DRIVER =================
 def create_driver(headless: bool = True):
     """Create and configure Chrome driver using shared chrome_helper."""
@@ -98,6 +113,17 @@ def instagram_login(driver, username: Optional[str] = None, password: Optional[s
         print("[WARN] Instagram credentials not provided. Trying to continue without login...")
         return
     
+    # Try loading cookies first
+    driver.get("https://www.instagram.com/")
+    time.sleep(1)
+    if load_cookies(driver):
+        driver.refresh()
+        time.sleep(2)
+        # Check if we're redirected away from login page
+        if "accounts/login" not in driver.current_url.lower():
+            print("[INFO] Successfully logged in to Instagram using cookies")
+            return
+
     driver.get("https://www.instagram.com/accounts/login/")
     
     # Skip waiting for full page load - start immediately (faster startup)

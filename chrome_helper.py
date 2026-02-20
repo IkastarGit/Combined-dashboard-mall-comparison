@@ -126,6 +126,23 @@ def make_chrome_driver(
         # Local dev fallback: selenium-manager downloads matching chromedriver
         driver = webdriver.Chrome(options=opts)
 
+    # --- Apply Stealth Settings ---
+    try:
+        from selenium_stealth import stealth
+        stealth(
+            driver,
+            languages=["en-US", "en"],
+            vendor="Google Inc.",
+            platform="Win32",
+            webgl_vendor="Intel Inc.",
+            renderer="Intel Iris OpenGL Engine",
+            fix_hairline=True,
+        )
+        print("[INFO] Applied selenium-stealth settings")
+    except ImportError:
+        # If selenium-stealth is not installed, continue without it
+        pass
+
     driver.set_page_load_timeout(30)
     driver.implicitly_wait(5)
 
