@@ -207,22 +207,32 @@ def run_pipeline(
             mall_from_query = extract_mall_name_from_query(custom_query)
             if mall_from_query:
                 print(f"[Step 1b] Detected mall: «{mall_from_query}» — finding official website via DDG...")
-                # Search DDG for the official site instead of using Selenium
-                official_results = search_duckduckgo(f'"{mall_from_query}" official website', max_results=5)
-                official = next(
-                    ({"link": r["link"], "title": r["title"]} for r in official_results
-                     if r.get("link") and "google.com" not in r["link"]),
-                    None,
-                )
+                off_results = search_duckduckgo(f'"{mall_from_query}" official website', max_results=10)
+                
+                # Use refinement logic to find the REAL site (not random news or movie sites)
+                from selenium_search import _is_likely_official_mall_site
+                official = None
+                for r in off_results:
+                    link = r.get("link") or ""
+                    title = r.get("title") or ""
+                    if link and "google.com" not in link:
+                        if _is_likely_official_mall_site(link, title) or mall_from_query.lower() in link.lower():
+                            official = {"link": link, "title": title}
+                            break
+                
+                # Fallback: if no "likely" site found, take the first result as a gamble, 
+                # but only if it's not obviously irrelevant.
+                if not official and off_results:
+                    official = {"link": off_results[0]["link"], "title": off_results[0]["title"]}
+                
                 if official:
                     off_url = official.get("link") or ""
                     off_title = official.get("title") or off_url
-                    print(f"[Step 1b] Official site: {off_title[:60]}...")
+                    print(f"[Step 1b] Selected Official Site candidate: {off_title[:60]}... ({off_url})")
+                    
                     text = extract_text_from_url(off_url)
                     if not text:
-                        # Try Selenium fallback only if driver is available
-                        if driver is None:
-                            driver = _try_get_selenium_driver()
+                        if driver is None: driver = _try_get_selenium_driver()
                         if driver:
                             try:
                                 driver.get(off_url)
@@ -230,114 +240,110 @@ def run_pipeline(
                                 text = extract_clean_text(driver.page_source or "")
                             except Exception as e:
                                 print(f"[Step 1b] Selenium fallback failed: {e}")
-                    if text:
+                    
+                    if text and len(text) > 100:
                         source_label = f"Official website: {mall_from_query}"
-                        result = analyze_extracted_text(
-                            text,
-                            source_url=off_url,
-                            source_title=source_label,
-                            skip_relevance_check=True,
-                            debug=True,
-                        )
-                        for row in result.get("store_openings") or []:
-                            structured_rows.append(row)
-                        for row in result.get("vacated_tenants") or []:
-                            vacated_tenants_list.append(row)
-                        for row in result.get("temporary_events") or []:
-                            temporary_events_list.append(row)
-                        if result.get("latest_updates"):
-                            latest_updates_list.append(result["latest_updates"])
+                        print(f"[Step 1b] Analyzing official site content ({len(text)} chars)...")
+                        result = analyze_extracted_text(text, source_url=off_url, source_title=source_label, skip_relevance_check=True, debug=True)
+                        
+                        for row in result.get("store_openings") or []: structured_rows.append(row)
+                        for row in result.get("vacated_tenants") or []: vacated_tenants_list.append(row)
+                        for row in result.get("temporary_events") or []: temporary_events_list.append(row)
+                        if result.get("latest_updates"): latest_updates_list.append(result["latest_updates"])
+                        
                         if save_extracted_text:
                             out_dir.mkdir(exist_ok=True)
                             slug = _sanitize_filename(mall_from_query)
-                            fpath = out_dir / f"extract_official_{slug}.txt"
-                            with open(fpath, "w", encoding="utf-8") as f:
+                            with open(out_dir / f"extract_official_{slug}.txt", "w", encoding="utf-8") as f:
                                 f.write(f"URL: {off_url}\nTitle: {source_label}\n")
-                                f.write("=" * 70 + "\n\n")
-                                f.write(text)
-                            print(f"[Step 1b] Saved official site text: {fpath.name}")
+                                f.write("=" * 70 + "\n\n" + text)
+                        
                         seen_links.add(off_url)
-                        print(f"[Step 1b] Extracted coming soon / latest updates from official site first.")
                     else:
-                        print(f"[Step 1b] No text extracted from official site (skipped).")
+                        print(f"[Step 1b] Could not extract meaningful text from candidate site (skipped).")
                 else:
                     print(f"[Step 1b] No official mall website found for «{mall_from_query}».")
 
-        # --- Step 2: Search (Selenium Search is primary to support AI Overviews) ---
-        print("[Step 2] Running Search (prioritizing Selenium for AI Overviews)...")
+        # --- Step 2: Search (Dynamically prioritizing to avoid CAPTCHAs) ---
+        print("\n[Step 2] Running Multi-Stage Search discovery...")
         ai_overview_sources: List[Dict[str, Any]] = []  # [{query, text, source_url, source_title}]
         
+        # Check if we have Google Search API Credentials
+        import os
+        has_google_api = bool(os.environ.get("GOOGLE_SEARCH_API_KEY") and os.environ.get("GOOGLE_SEARCH_ENGINE_ID"))
+
         for q in queries:
             results = []
             
-            # 1. Try Selenium Google Search first (provides AI Overview)
-            try:
-                from selenium_search import search_google, extract_ai_overview
-                results = search_google(q, max_results=max_results_per_search, driver=driver)
-                
-                # Check for shared driver or own driver needs (driver is None here initially)
-                if driver is None: 
-                    # We might want to persist driver for AI overview extraction
-                    driver = _try_get_selenium_driver()
-                    if driver:
-                        results = search_google(q, max_results=max_results_per_search, driver=driver)
-                
-                if driver:
-                    try:
-                        ai_data = extract_ai_overview(driver, expand_first=True)
-                        ai_text = (ai_data.get("text") or "").strip()
-                        if ai_text:
-                            ai_overview_sources.append({
-                                "query": q,
-                                "text": ai_text,
-                                "source_url": driver.current_url,
-                                "source_title": f"Google AI Overview: {q[:60]}",
-                            })
-                            print(f"  [AI Overview] Extracted from Google: {len(ai_text)} chars")
-                    except Exception as e:
-                        print(f"  [AI Overview] Skip: {e}")
-            except Exception as e:
-                print(f"  [Selenium] Search failed for '{q[:30]}': {e}")
-            
-            # 2. Fallback to Official Google API
-            if not results:
-                print(f"  [Fallback] Trying Official Google Search API for: {q[:30]}...")
+            # 1. OPTIONAL: Try Official Google API FIRST if configured (Fastest & Safest for Railway)
+            if has_google_api:
+                print(f"  > Stage 1: Trying Official Google Search API for: {q[:40]}...")
                 try:
                     from search_fallback import search_via_google_api
                     results = search_via_google_api(q, max_results=max_results_per_search)
-                except Exception as e:
-                    print(f"  [Google API] Fallback error: {e}")
-            
-            # 3. Fallback to DuckDuckGo (Resilient browser-free)
+                except Exception as e: print(f"  [API Error] {e}")
+
+            # 2. Try Selenium Search (Only if API failed or not configured)
+            # This is prioritized last on Railway if API is available, but first if we want AI Overviews.
+            # Strategy: Always try Selenium if we want AI Overviews, but gracefully skip if CAPTCHA detected.
+            if not results or not has_google_api:
+                print(f"  > Stage 2: Attempting Selenium Search (for AI Overviews) for: {q[:40]}...")
+                try:
+                    from selenium_search import search_google, extract_ai_overview
+                    
+                    # Create driver if missing
+                    if driver is None: driver = _try_get_selenium_driver()
+                    
+                    if driver:
+                        results = search_google(q, max_results=max_results_per_search, driver=driver)
+                        
+                        # Only try AI extraction if search returned SOMETHING (not blocked by CAPTCHA)
+                        if results:
+                            try:
+                                ai_data = extract_ai_overview(driver)
+                                ai_text = (ai_data.get("text") or "").strip()
+                                if ai_text:
+                                    ai_overview_sources.append({
+                                        "query": q, "text": ai_text,
+                                        "source_url": driver.current_url,
+                                        "source_title": f"Google AI Overview: {q[:60]}"
+                                    })
+                                    print(f"  [AI Overview] Extracted successfully ({len(ai_text)} chars).")
+                            except: pass
+                        else:
+                            # If Selenium gave 0 results, it was likely CAPTCHA (already logged in selenium_search.py)
+                            pass
+                except Exception as e: print(f"  [Selenium Error] {e}")
+
+            # 3. Fallback to DuckDuckGo (Resilient browser-free secondary fallback)
             if not results:
-                print(f"  [Fallback] Trying DuckDuckGo for: {q[:30]}...")
+                print(f"  > Stage 3: Falling back to DuckDuckGo for: {q[:40]}...")
                 try:
                     results = search_duckduckgo(q, max_results=max_results_per_search)
-                except Exception as e:
-                    print(f"  [DDG] Fallback error: {e}")
+                except Exception as e: print(f"  [DDG Error] {e}")
 
-            print(f"  Results for '{q[:40]}...' -> {len(results)} item(s)")
+            print(f"  Final Results for this query: {len(results)} item(s)")
             for r in results:
                 link = r.get("link") or ""
                 if link and link not in seen_links:
                     seen_links.add(link)
                     all_results.append(r)
-            if len(all_results) >= max_links_per_query * 3:
-                break
+            if len(all_results) >= max_links_per_query * 3: break
 
-        print(f"[Step 2] Unique items to process: {len(all_results)} | AI Overviews: {len(ai_overview_sources)}")
+        print(f"\n[Step 2 Summary] Unique links: {len(all_results)} | AI Overviews: {len(ai_overview_sources)}")
         
         if not all_results and not ai_overview_sources:
-            print("[FAIL] No search results from any method.")
+            print("[FAIL] All search stages failed (Google API, Selenium, and DDG returned 0 results).")
             if driver:
                 try:
                     debug_path = os.path.join(out_dir.parent if out_dir.exists() else Path.cwd(), "pipeline_fail_debug.png")
                     driver.save_screenshot(str(debug_path))
-                    print(f"  [Pipeline] Saved debug screenshot to {debug_path}")
-                except Exception: pass
+                    print(f"  [Debug] Screenshot saved to: {debug_path}")
+                except: pass
             return {"store_openings": [], "vacated_tenants": [], "temporary_events": [], "latest_updates": [], "extracted_text_files": []}
 
         # Process Google AI Overview text if found
+        file_index = 0 # Initialize file_index for AI overview sources
         for ai_src in ai_overview_sources:
             file_index += 1
             text = ai_src.get("text") or ""

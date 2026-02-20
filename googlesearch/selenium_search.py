@@ -215,28 +215,36 @@ def find_official_mall_website(
     """
     if not mall_name or not mall_name.strip():
         return None
-    query = f'"{mall_name.strip()}" official website'
-    results = search_google(query, max_results=max_results, driver=driver)
-    for r in results:
-        link = (r.get("link") or "").strip()
-        title = (r.get("title") or "").strip()
-        if not link or "google.com" in link:
-            continue
-        if _is_likely_official_mall_site(link, title):
-            return {"link": link, "title": title or link}
-    # If no "official" candidate, return first result that isn't clearly third-party
-    for r in results:
-        link = (r.get("link") or "").strip()
-        title = (r.get("title") or "").strip()
-        if not link or "google.com" in link:
-            continue
-        try:
-            host = urlparse(link).netloc.lower()
-        except Exception:
-            continue
-        if any(f in host for f in NON_OFFICIAL_DOMAIN_FRAGMENTS):
-            continue
-        return {"link": link, "title": title or link}
+    
+    # Try multiple variations for better coverage
+    queries = [
+        f'"{mall_name.strip()}" official website',
+        f'"{mall_name.strip()}" website'
+    ]
+    
+    for query in queries:
+        results = search_google(query, max_results=max_results, driver=driver)
+        # 1. Look for highly likely official site
+        for r in results:
+            link = (r.get("link") or "").strip()
+            title = (r.get("title") or "").strip()
+            if not link or "google.com" in link: continue
+            if _is_likely_official_mall_site(link, title):
+                return {"link": link, "title": title or link}
+        
+        # 2. Look for any site containing the mall name in the domain
+        mall_slug = re.sub(r"[^\w]", "", mall_name.lower())
+        for r in results:
+            link = (r.get("link") or "").strip()
+            if not link or "google.com" in link: continue
+            try:
+                host = urlparse(link).netloc.lower()
+                if mall_slug in host.replace("-", "").replace("_", ""):
+                    # Double check it's not a known third-party
+                    if not any(f in host for f in NON_OFFICIAL_DOMAIN_FRAGMENTS):
+                        return {"link": link, "title": r.get("title") or link}
+            except: continue
+            
     return None
 
 
