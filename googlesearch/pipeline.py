@@ -276,9 +276,9 @@ def run_pipeline(
             if len(all_results) >= max_links_per_query * 3:  # cap total links
                 break
 
-        print(f"[Step 2] Total unique links to process: {len(all_results)} | AI Overviews: {len(ai_overview_sources)}")
+        print(f"[Step 2] Total unique links to process: {len(all_results)}")
         if not all_results:
-            print("[FAIL] No search results. Check Selenium/Chrome or try a different query.")
+            print("[FAIL] No search results returned from DuckDuckGo.")
             return {"store_openings": [], "vacated_tenants": [], "temporary_events": [], "latest_updates": [], "extracted_text_files": []}
 
         # Limit how many pages we fetch
@@ -289,41 +289,6 @@ def run_pipeline(
             out_dir.mkdir(exist_ok=True)
         extracted_text_files: List[Dict[str, str]] = []
         file_index = 0
-
-        # Process Google AI Overview text first (Dive deeper / AI mode)
-        for ai_src in ai_overview_sources:
-            file_index += 1
-            text = ai_src.get("text") or ""
-            link = ai_src.get("source_url") or ""
-            title = ai_src.get("source_title") or "Google AI Overview"
-            if not text:
-                continue
-            print(f"\n  [AI Overview {file_index}] {title[:60]}...")
-            print(f"      Source: Google AI Overview ({len(text)} chars)")
-            slug = _sanitize_filename(ai_src.get("query", "ai_overview"))
-            filename = f"extract_ai_{file_index}_{slug}.txt"
-            content = f"URL: {link}\nTitle: {title}\n" + "=" * 70 + "\n\n" + text
-            extracted_text_files.append({"filename": filename, "content": content})
-            if save_extracted_text:
-                fpath = out_dir / filename
-                with open(fpath, "w", encoding="utf-8") as f:
-                    f.write(content)
-                print(f"      Saved text: {fpath.name}")
-            result = analyze_extracted_text(
-                text,
-                source_url=link,
-                source_title=title,
-                skip_relevance_check=True,
-                debug=True,
-            )
-            for row in result.get("store_openings") or []:
-                structured_rows.append(row)
-            for row in result.get("vacated_tenants") or []:
-                vacated_tenants_list.append(row)
-            for row in result.get("temporary_events") or []:
-                temporary_events_list.append(row)
-            if result.get("latest_updates"):
-                latest_updates_list.append(result["latest_updates"])
 
         print("[Step 3–5] Fetching pages, extracting text, running AI analysis...")
         for i, r in enumerate(to_process):
