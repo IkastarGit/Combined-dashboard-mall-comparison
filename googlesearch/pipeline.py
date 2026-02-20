@@ -268,15 +268,24 @@ def run_pipeline(
         for q in queries:
             results = search_duckduckgo(q, max_results=max_results_per_search)
             
-            # Fallback to Google Search if DDG returns nothing (DDG often blocks data centers)
+            # Fallback 1: Official Google Custom Search JSON API (most reliable)
             if not results:
-                print(f"  Query '{q[:50]}...' -> 0 results from DuckDuckGo. Trying Google Search fallback...")
+                print(f"  Query '{q[:50]}...' -> 0 results from DuckDuckGo. Trying Official Google Search API fallback...")
+                try:
+                    from search_fallback import search_via_google_api
+                    results = search_via_google_api(q, max_results=max_results_per_search)
+                except Exception as e:
+                    print(f"  [Google API Fallback] Error: {e}")
+            
+            # Fallback 2: Selenium Google Search (unreliable on cloud/Railway due to CAPTCHA)
+            if not results:
+                print(f"  Query '{q[:50]}...' -> 0 results still. Trying Selenium Google Search (last resort)...")
                 try:
                     from selenium_search import search_google
                     # Use the shared driver if already created, or search_google will create its own
                     results = search_google(q, max_results=max_results_per_search, driver=driver)
                 except Exception as e:
-                    print(f"  [Google Fallback] Error: {e}")
+                    print(f"  [Selenium Fallback] Error: {e}")
                     results = []
             
             print(f"  Query '{q[:50]}...' -> {len(results)} result(s)")
@@ -290,7 +299,7 @@ def run_pipeline(
 
         print(f"[Step 2] Total unique links to process: {len(all_results)}")
         if not all_results:
-            print("[FAIL] No search results returned from DuckDuckGo or Google.")
+            print("[FAIL] No search results returned from DuckDuckGo, API, or Selenium.")
             # Final debug snapshot if we have a driver
             if driver:
                 try:
