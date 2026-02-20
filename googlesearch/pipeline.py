@@ -291,6 +291,14 @@ def run_pipeline(
         print(f"[Step 2] Total unique links to process: {len(all_results)}")
         if not all_results:
             print("[FAIL] No search results returned from DuckDuckGo or Google.")
+            # Final debug snapshot if we have a driver
+            if driver:
+                try:
+                    debug_path = os.path.join(out_dir.parent, "pipeline_fail_debug.png")
+                    driver.save_screenshot(debug_path)
+                    print(f"  [Pipeline] Saved debug screenshot to {debug_path}")
+                except Exception:
+                    pass
             return {"store_openings": [], "vacated_tenants": [], "temporary_events": [], "latest_updates": [], "extracted_text_files": []}
 
         # Limit how many pages we fetch

@@ -140,6 +140,20 @@ def search_google(
             if len(results) >= max_results:
                 break
 
+        if not results:
+            print(f"  [Google] No results found with primary selectors. Title: {driver.title}")
+            # Check for CAPTCHA
+            if "captcha" in driver.page_source.lower() or "not a robot" in driver.page_source.lower():
+                print("  [Google] CAPTCHA detected!")
+            
+            # Save debug screenshot in Railway (base_dir should be /app in docker)
+            try:
+                debug_path = os.path.join(_ROOT, "google_search_debug.png")
+                driver.save_screenshot(debug_path)
+                print(f"  [Google] Saved debug screenshot to {debug_path}")
+            except Exception as eSnapshot:
+                print(f"  [Google] Failed to save debug screenshot: {eSnapshot}")
+
         # Fallback: any visible links in main content area
         if len(results) < max_results:
             try:
