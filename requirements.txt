@@ -1,5 +1,6 @@
 streamlit
 pandas
+numpy
 requests
 selenium>=4.8
 webdriver-manager>=4.0.0

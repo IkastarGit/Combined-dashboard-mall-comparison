@@ -8,7 +8,12 @@ from pathlib import Path
 # import easyocr
 # from sentence_transformers import SentenceTransformer, util
 import pandas as pd
-import cv2
+try:
+    import cv2
+    _CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    _CV2_AVAILABLE = False
 import glob
 import asyncio
 import sys
@@ -67,64 +72,58 @@ def load_json_data():
 def preprocess_image(image_path):
     """
     Enhances image for better OCR accuracy while maintaining enough resolution.
+    Falls back to basic PIL processing if cv2 is not available.
     """
     img = Image.open(image_path).convert("RGB")
-    
-    # Advanced Enhancement Pipeline
-    img_gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
-    
-    # 1. CLAHE (Contrast Limited Adaptive Histogram Equalization) for text visibility on backgrounds
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-    img_gray = clahe.apply(img_gray)
-    
-    # 2. Localized Sharpening
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    img_sharpened = cv2.filter2D(img_gray, -1, kernel)
-    
-    # Convert back to RGB for PIL processing if needed, but OCR likes gray too
-    img = Image.fromarray(cv2.cvtColor(img_sharpened, cv2.COLOR_GRAY2RGB))
-    
+
+    if _CV2_AVAILABLE:
+        # Advanced Enhancement Pipeline
+        img_gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        img_gray = clahe.apply(img_gray)
+        kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+        img_sharpened = cv2.filter2D(img_gray, -1, kernel)
+        img = Image.fromarray(cv2.cvtColor(img_sharpened, cv2.COLOR_GRAY2RGB))
+
     # Increase resolution (3000px for extreme detail)
     max_dim = 3000
     w, h = img.size
     if w > max_dim or h > max_dim:
         scale = max_dim / max(w, h)
         img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
-    
+
     return img
 
 def solve_latlon_to_pixel(valid_pts):
     """
     Gold-standard coordinate projection with normalization and iterative refinement.
+    Requires cv2; returns (None, None, None) if cv2 is not available.
     """
+    if not _CV2_AVAILABLE:
+        return None, None, None
     if len(valid_pts) < 3:
         return None, None, None
-        
+
     src_pts = np.array([[p['lon'], p['lat']] for p in valid_pts], dtype=np.float64)
     dst_pts = np.array([[p['x'], p['y']] for p in valid_pts], dtype=np.float64)
 
-    # 1. Normalization (Matrix Scaling/Translation for Numeric Stability)
     src_mean = np.mean(src_pts, axis=0)
     dst_mean = np.mean(dst_pts, axis=0)
     src_std = np.std(src_pts, axis=0) + 1e-9
     dst_std = np.std(dst_pts, axis=0) + 1e-9
-    
+
     src_norm = (src_pts - src_mean) / src_std
     dst_norm = (dst_pts - dst_mean) / dst_std
 
-    # 2. Iterative RANSAC Solver
     if len(valid_pts) >= 4:
-        # Homography with tight reprojection threshold (1.0px)
         H_norm, mask = cv2.findHomography(src_norm, dst_norm, cv2.RANSAC, 1.0)
-        if H_norm is None: return None, None, None
-        
-        # Denormalize H
+        if H_norm is None:
+            return None, None, None
         T_src = np.array([[1/src_std[0], 0, -src_mean[0]/src_std[0]], [0, 1/src_std[1], -src_mean[1]/src_std[1]], [0, 0, 1]])
         T_dst_inv = np.array([[dst_std[0], 0, dst_mean[0]], [0, dst_std[1], dst_mean[1]], [0, 0, 1]])
         H = T_dst_inv @ H_norm @ T_src
         return H, "homography", mask
     else:
-        # Affine with LMEDS for small point sets
         M, mask = cv2.estimateAffine2D(src_pts, dst_pts, method=cv2.LMEDS)
         return M, "affine", mask
 
