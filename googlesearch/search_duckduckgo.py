@@ -18,8 +18,15 @@ def search_duckduckgo(query: str, max_results: int = 15) -> List[dict]:
     try:
         from duckduckgo_search import DDGS
         results = []
+        # The library renamed internal classes; DDGS is the standard entry point.
+        # We suppress warnings about the rename and handle empty results.
         with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=max_results):
+            # results is a generator in newer versions
+            ddgs_gen = ddgs.text(query, max_results=max_results)
+            if not ddgs_gen:
+                return []
+                
+            for r in ddgs_gen:
                 link = (r.get("href") or r.get("url") or "").strip()
                 if not link or "duckduckgo.com" in link:
                     continue
@@ -30,5 +37,5 @@ def search_duckduckgo(query: str, max_results: int = 15) -> List[dict]:
                 })
         return results
     except Exception as e:
-        print(f"[DDG search] Error: {e}")
+        print(f"[DDG search] Error searching for '{query}': {e}")
         return []

@@ -267,6 +267,18 @@ def run_pipeline(
         print("[Step 2] Running DuckDuckGo search (no browser required)...")
         for q in queries:
             results = search_duckduckgo(q, max_results=max_results_per_search)
+            
+            # Fallback to Google Search if DDG returns nothing (DDG often blocks data centers)
+            if not results:
+                print(f"  Query '{q[:50]}...' -> 0 results from DuckDuckGo. Trying Google Search fallback...")
+                try:
+                    from selenium_search import search_google
+                    # Use the shared driver if already created, or search_google will create its own
+                    results = search_google(q, max_results=max_results_per_search, driver=driver)
+                except Exception as e:
+                    print(f"  [Google Fallback] Error: {e}")
+                    results = []
+            
             print(f"  Query '{q[:50]}...' -> {len(results)} result(s)")
             for r in results:
                 link = r.get("link") or ""
@@ -278,7 +290,7 @@ def run_pipeline(
 
         print(f"[Step 2] Total unique links to process: {len(all_results)}")
         if not all_results:
-            print("[FAIL] No search results returned from DuckDuckGo.")
+            print("[FAIL] No search results returned from DuckDuckGo or Google.")
             return {"store_openings": [], "vacated_tenants": [], "temporary_events": [], "latest_updates": [], "extracted_text_files": []}
 
         # Limit how many pages we fetch
