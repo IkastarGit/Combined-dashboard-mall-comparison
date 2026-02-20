@@ -8,7 +8,7 @@ load_dotenv()  # Load .env file if present
 # --- Chrome / Selenium ---
 # Google detects headless Chrome and often withholds AI Overview content (the main data source).
 # Set False for reliable results; True only works when Google doesn't block headless.
-CHROME_HEADLESS = False
+CHROME_HEADLESS = os.environ.get("HEADLESS", "1") == "1"
 CHROME_WINDOW_SIZE = "1920,1080"
 CHROME_PAGE_LOAD_TIMEOUT = 30  # Increased for slow pages (e.g. Instagram)
 CHROME_IMPLICIT_WAIT = 5
