@@ -1,5 +1,7 @@
 import time
 import os
+import sys
+import traceback
 import json
 import pickle
 from pathlib import Path
@@ -570,7 +572,6 @@ def scrape_instagram_simple(ig_url: str, target_count: int = 20) -> pd.DataFrame
 
     except Exception as e:
         print(f"[ERROR] Instagram scraping error: {e}")
-        import traceback
         traceback.print_exc()
         return pd.DataFrame(columns=['shop_name', 'phone', 'floor', 'source'])
     finally:
@@ -583,7 +584,6 @@ def scrape_instagram_simple(ig_url: str, target_count: int = 20) -> pd.DataFrame
 
 def main():
     """Original main function for standalone execution."""
-    import sys
     
     driver = None
     try:
@@ -648,7 +648,6 @@ def main():
 
     except Exception as e:
         print(f"[ERROR] An error occurred: {e}")
-        import traceback
         traceback.print_exc()
     finally:
         print("\n[BROWSER LEFT OPEN]")
