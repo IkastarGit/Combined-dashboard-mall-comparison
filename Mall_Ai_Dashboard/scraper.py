@@ -33,6 +33,52 @@ def create_driver():
     return make_chrome_driver(headless=HEADLESS)
 
 
+def _strip_base64_and_noise_lines(text):
+    """Remove lines that look like base64 or long binary noise so more store content
+    fits within the LLM token limit. Keeps store names, SUITE lines, hours, etc.
+    """
+    if not text or not text.strip():
+        return text
+    lines = text.split("\n")
+    kept = []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        # Skip long lines that are mostly base64-like (alphanumeric, +, /, =)
+        if len(s) > 200:
+            alpha = sum(1 for c in s if c.isalnum() or c in "+/=")
+            if alpha / len(s) > 0.85:
+                continue
+        if len(s) > 500:
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def _parse_suite_location_lines(text):
+    """Parse lines like 'SUITE 51 Coach location' or 'SUITE 134 Columbia Factory Store location'
+    to extract all stores with their suite number. Returns list of dicts with shop_name, phone, floor, image_url.
+    """
+    if not text:
+        return []
+    # Match "SUITE NNN Shop Name location" (shop name can contain spaces, |, etc.)
+    pattern = re.compile(r"SUITE\s+(\d+)\s+(.+?)\s+location\s*$", re.IGNORECASE | re.MULTILINE)
+    shops = []
+    for m in pattern.finditer(text):
+        suite_num = m.group(1)
+        shop_name = m.group(2).strip()
+        if not shop_name or len(shop_name) < 2:
+            continue
+        shops.append({
+            "shop_name": shop_name,
+            "phone": "",
+            "floor": f"SUITE {suite_num}",
+            "image_url": "",
+        })
+    return shops
+
+
 
 def _extract_shop_names_from_attributes(soup):
     """
@@ -1348,6 +1394,10 @@ def scrape_url(url, output_csv: str = DEFAULT_OUTPUT_CSV, output_text: str = DEF
             # because some shop names or codes can be short.
             lines = [line.strip() for line in clean_text.split("\n")]
             clean_text = "\n".join(line for line in lines if line)
+            # Strip base64/noise lines so more store content fits within LLM token limit
+            clean_text_for_llm = _strip_base64_and_noise_lines(clean_text)
+            if len(clean_text_for_llm) < len(clean_text):
+                print(f"Stripped noise lines: {len(clean_text)} -> {len(clean_text_for_llm)} chars")
             
             print(f"Extracted {len(clean_text)} characters of clean text from {url}")
             
@@ -1363,17 +1413,28 @@ def scrape_url(url, output_csv: str = DEFAULT_OUTPUT_CSV, output_text: str = DEF
                 f.write(clean_text)
             print(f"Saved extracted text to: {extracted_text_filepath}")
             
-            # Use OpenAI to extract shop names from the clean text
-            if not clean_text or len(clean_text.strip()) < 50:
+            # Try structured "SUITE NNN Shop Name location" pattern first (e.g. Tanger) for full list
+            suite_shops = _parse_suite_location_lines(clean_text)
+            if len(suite_shops) >= 10:
+                shops = suite_shops
+                print(f"✅ Extracted {len(shops)} shops from SUITE ... location lines (no LLM needed)")
+                if extracted_text_filepath:
+                    with open("last_extracted_text_path.txt", "w", encoding="utf-8") as f:
+                        f.write(extracted_text_filepath)
+            elif not clean_text_for_llm or len(clean_text_for_llm.strip()) < 50:
                 print(f"Warning: Insufficient text extracted from {url}")
-                shops = []
+                shops = suite_shops if suite_shops else []
             else:
-                # Import here to avoid circular imports
+                # Use OpenAI to extract shop names from the clean text (with base64 stripped)
                 from llm_engine import extract_shops_from_text
-                # Use LLM (OpenAI) to extract shop names from the clean text
-                print(f"Extracting shop names using OpenAI from {len(clean_text)} characters of text...")
-                shops = extract_shops_from_text(clean_text, url=url)
-                print(f"✅ OpenAI extracted {len(shops)} shops from {url}")
+                print(f"Extracting shop names using OpenAI from {len(clean_text_for_llm)} characters of text...")
+                shops = extract_shops_from_text(clean_text_for_llm, url=url)
+                # If we got few from LLM but had some from SUITE lines, merge (avoid losing stores)
+                if suite_shops and len(shops) < len(suite_shops):
+                    shops = suite_shops
+                    print(f"✅ Using {len(shops)} shops from SUITE ... location lines (more than LLM)")
+                else:
+                    print(f"✅ OpenAI extracted {len(shops)} shops from {url}")
                 
                 # Store the extracted text filepath for later download.
                 # This is used by the Streamlit app to show "Download Extracted Text Files"

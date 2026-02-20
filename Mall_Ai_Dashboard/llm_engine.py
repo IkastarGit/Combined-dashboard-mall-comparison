@@ -265,7 +265,9 @@ INSTRUCTIONS:
    - "www.example.com" (starts with www.)
    - "http://example.com" or "https://example.com" (starts with http)
    However, DO extract shop names that contain .com as part of their branding (like "Shop.com" store, "Store.com" - these usually have capital letters and are actual shop names).
-10. If the SAME shop name appears multiple times as separate entries (for example, multiple cards or units for "Banter by Piercing Pagoda"), you MUST output ONE LINE PER OCCURRENCE. Do NOT merge or de-duplicate shops with the same name.
+10. If the SAME shop name appears multiple times as separate entries (for example, multiple cards or units for "Banter by Piercing Pagoda"), you MUST output ONE LINE PER OCCURRENCE. Do NOT merge or de-duplicate shops with the same name. Each store card/listing is one row.
+11. When the page lists stores with a SUITE or unit number (e.g. "SUITE 51", "SUITE 134"), put that in the Floor column so that same-named shops stay as separate rows (e.g. "Coach | | SUITE 51 |" and "Coach | | SUITE 99 |" are two rows).
+12. Look for patterns like "SUITE 123 Store Name" or "Store Name SUITE 123" and extract both the store name and SUITE/unit into Floor. Output one line per store entry, not one per unique name.
 
 OUTPUT FORMAT (PLAIN TEXT ONLY):
 - Return ONLY plain text (no JSON, no markdown, no code blocks).
@@ -276,7 +278,7 @@ OUTPUT FORMAT (PLAIN TEXT ONLY):
 Where:
 - Shop Name: exact shop/store/business name.
 - Phone: phone number if found near the shop, else empty string.
-- Floor: floor/level info if found (e.g. "Ground Floor", "Level 2", "Food Court"), else empty string.
+- Floor: floor/level/unit info if found (e.g. "Ground Floor", "Level 2", "SUITE 51", "Food Court"), else empty string. Include SUITE or unit number when present so duplicate store names remain as separate rows.
 - ImageURL: image URL if found, else empty string.
 
 EXAMPLE (FORMAT ONLY):
