@@ -1,8 +1,8 @@
 """
 Full retail store-opening discovery pipeline.
 
-Flow: Query generation → Selenium search → Requests (with Selenium fallback) → BeautifulSoup
-      → Gemini AI analysis → Structured output → CSV/Excel export + extracted text files.
+Flow: Query generation → DuckDuckGo search (browser-free) → Requests (with Selenium fallback)
+      → BeautifulSoup → Gemini AI analysis → Structured output → CSV/Excel export.
 """
 
 import csv
@@ -20,7 +20,7 @@ from config import (
 from ai_analysis import AI_AVAILABLE, AI_SOURCE_NAME, analyze_extracted_text, extract_combined, generate_mall_intel
 from extract_text import extract_clean_text, extract_text_from_url
 from query_generation import extract_mall_name_from_query, generate_queries
-from selenium_search import create_driver, extract_ai_overview, find_official_mall_website, search_google
+from search_duckduckgo import search_duckduckgo
 
 
 def _sanitize_filename(s: str, max_len: int = 60) -> str:
@@ -150,6 +150,16 @@ def run_pipeline_gemini_only(
     return {"store_openings": unique_rows, "vacated_tenants": unique_vacated, "temporary_events": unique_events, "latest_updates": unique_updates, "extracted_text_files": extracted_text_files}
 
 
+def _try_get_selenium_driver():
+    """Try to create a Selenium Chrome driver. Returns None if Chrome is unavailable."""
+    try:
+        from selenium_search import create_driver
+        return create_driver()
+    except Exception as e:
+        print(f"[Selenium] Not available (Chrome/ChromeDriver missing): {e}")
+        return None
+
+
 def run_pipeline(
     mall_name: Optional[str] = None,
     brand_name: Optional[str] = None,
@@ -166,14 +176,15 @@ def run_pipeline(
 
     Steps:
     1. Generate search queries from mall_name / brand_name / custom_query.
-    2. For each query: Selenium search.
-    3. For each result link: fetch page, extract text with BeautifulSoup.
+    2. For each query: DuckDuckGo search (browser-free; no Chrome required).
+    3. For each result link: fetch page with requests, extract text with BeautifulSoup.
+       Selenium is used only as a last-resort fallback for JS-heavy pages.
     4. Optionally save extracted text to files.
-    5. Run Gemini: relevance check + structured extraction (Mall, Brand, Expected Opening, Location, Confidence).
+    5. Run Gemini AI analysis → structured extraction.
     6. Export to CSV and Excel.
 
     Returns:
-        Dict with "store_openings" (list of mall/brand/opening records) and "latest_updates" (list of mall update records).
+        Dict with "store_openings", "vacated_tenants", "temporary_events", "latest_updates".
     """
     queries = generate_queries(mall_name=mall_name, brand_name=brand_name, custom_query=custom_query)
     print(f"[Step 1] Generated {len(queries)} query(s): {queries}")
@@ -184,29 +195,41 @@ def run_pipeline(
     latest_updates_list: List[Dict[str, Any]] = []
     out_dir = Path(EXTRACTED_OUTPUT_DIR)
     structured_dir = Path(STRUCTURED_OUTPUT_DIR)
-    driver = create_driver()
+
+    # Selenium driver is optional — only used for Selenium page-fetch fallback
+    driver = None
     try:
         all_results: List[dict] = []  # search result items {title, link, snippet}
         seen_links: set = set()
 
-        # --- Functionality 1: If query is about a mall, find and scrape official mall website first ---
+        # --- Step 1b: If query is about a mall, find and scrape official mall website first ---
         if custom_query and custom_query.strip():
             mall_from_query = extract_mall_name_from_query(custom_query)
             if mall_from_query:
-                print(f"[Step 1b] Detected mall: «{mall_from_query}» — finding official website...")
-                official = find_official_mall_website(mall_from_query, driver, max_results=10)
+                print(f"[Step 1b] Detected mall: «{mall_from_query}» — finding official website via DDG...")
+                # Search DDG for the official site instead of using Selenium
+                official_results = search_duckduckgo(f'"{mall_from_query}" official website', max_results=5)
+                official = next(
+                    ({"link": r["link"], "title": r["title"]} for r in official_results
+                     if r.get("link") and "google.com" not in r["link"]),
+                    None,
+                )
                 if official:
                     off_url = official.get("link") or ""
                     off_title = official.get("title") or off_url
                     print(f"[Step 1b] Official site: {off_title[:60]}...")
                     text = extract_text_from_url(off_url)
                     if not text:
-                        try:
-                            driver.get(off_url)
-                            time.sleep(OFFICIAL_SITE_LOAD_SLEEP)
-                            text = extract_clean_text(driver.page_source or "")
-                        except Exception as e:
-                            print(f"[Step 1b] Could not load official site: {e}")
+                        # Try Selenium fallback only if driver is available
+                        if driver is None:
+                            driver = _try_get_selenium_driver()
+                        if driver:
+                            try:
+                                driver.get(off_url)
+                                time.sleep(OFFICIAL_SITE_LOAD_SLEEP)
+                                text = extract_clean_text(driver.page_source or "")
+                            except Exception as e:
+                                print(f"[Step 1b] Selenium fallback failed: {e}")
                     if text:
                         source_label = f"Official website: {mall_from_query}"
                         result = analyze_extracted_text(
@@ -240,25 +263,11 @@ def run_pipeline(
                 else:
                     print(f"[Step 1b] No official mall website found for «{mall_from_query}».")
 
-        print("[Step 2] Running Selenium search (including AI Overview / Dive deeper)...")
-        ai_overview_sources: List[Dict[str, Any]] = []  # [{query, text, source_url, source_title}]
+        # --- Step 2: DuckDuckGo search (browser-free) ---
+        print("[Step 2] Running DuckDuckGo search (no browser required)...")
         for q in queries:
-            results = search_google(q, max_results=max_results_per_search, driver=driver)
+            results = search_duckduckgo(q, max_results=max_results_per_search)
             print(f"  Query '{q[:50]}...' -> {len(results)} result(s)")
-            # Extract Google AI Overview / AI mode text from current search page (waits for async load)
-            try:
-                ai_data = extract_ai_overview(driver, expand_first=True)
-                ai_text = (ai_data.get("text") or "").strip()
-                if ai_text:
-                    ai_overview_sources.append({
-                        "query": q,
-                        "text": ai_text,
-                        "source_url": driver.current_url,
-                        "source_title": f"Google AI Overview: {q[:60]}",
-                    })
-                    print(f"  AI Overview extracted: {len(ai_text)} chars")
-            except Exception as e:
-                print(f"  AI Overview skip: {e}")
             for r in results:
                 link = r.get("link") or ""
                 if link and link not in seen_links:
@@ -326,12 +335,15 @@ def run_pipeline(
             text = extract_text_from_url(link)
             if not text:
                 print(f"      Requests empty -> trying Selenium fallback...")
-                try:
-                    driver.get(link)
-                    time.sleep(SELENIUM_FALLBACK_SLEEP)
-                    text = extract_clean_text(driver.page_source or "")
-                except Exception as e:
-                    print(f"      Selenium fallback failed: {e}")
+                if driver is None:
+                    driver = _try_get_selenium_driver()
+                if driver:
+                    try:
+                        driver.get(link)
+                        time.sleep(SELENIUM_FALLBACK_SLEEP)
+                        text = extract_clean_text(driver.page_source or "")
+                    except Exception as e:
+                        print(f"      Selenium fallback failed: {e}")
                 if not text:
                     print(f"      SKIP: Could not fetch or extract text (empty).")
                     continue
@@ -371,7 +383,11 @@ def run_pipeline(
             latest_updates_list.append(update)
 
     finally:
-        driver.quit()
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
 
     print(f"\n[Step 6] Total structured rows before dedupe: {len(structured_rows)}")
     # Dedupe by (mall_name, brand_name) keeping first
