@@ -47,7 +47,8 @@ def extract_mall_name_from_query(custom_query: Optional[str]) -> Optional[str]:
     # "about X mall" or "about X"
     m = re.search(r"about\s+(.+)", q_clean, re.I)
     if m:
-        return m.group(1).strip()
+        name = m.group(1).strip()
+        return re.sub(r"\s+", " ", name)
     return None
 
 

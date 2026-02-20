@@ -21,8 +21,10 @@ def search_duckduckgo(query: str, max_results: int = 15) -> List[dict]:
         # The library renamed internal classes; DDGS is the standard entry point.
         # We suppress warnings about the rename and handle empty results.
         with DDGS() as ddgs:
-            # results is a generator in newer versions
-            ddgs_gen = ddgs.text(query, max_results=max_results)
+            # Clean query and add region hint
+            import re
+            clean_q = re.sub(r"\s+", " ", query).strip()
+            ddgs_gen = ddgs.text(clean_q, max_results=max_results, region='wt-wt')
             if not ddgs_gen:
                 return []
                 

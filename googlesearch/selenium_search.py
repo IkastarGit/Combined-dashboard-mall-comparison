@@ -36,10 +36,14 @@ from config import (
 )
 
 
-# Realistic Chrome user agent (used when headless to reduce detection)
+# Realistic Chrome user agents
 _CHROME_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+# Mobile UA - often bypasses desktop CAPTCHAs
+_MOBILE_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 )
 
 
@@ -81,78 +85,50 @@ def search_google(
         driver.get(url)
         time.sleep(SCROLL_PAUSE_SECONDS)
 
-        # Accept cookies / consent if present (common on google.com)
-        try:
-            consent_btn = driver.find_elements(
-                By.XPATH,
-                "//button[contains(., 'Accept') or contains(., 'Accept all') or contains(., 'I agree')]"
-            )
-            if consent_btn:
-                consent_btn[0].click()
-                time.sleep(SEARCH_CONSENT_SLEEP)
-        except Exception:
-            pass
+        # Inner heart of extraction
+        def extract_from_page(d):
+            found = []
+            seen = set()
+            result_selectors = ["div.g", "div[data-hveid]"]
+            for selector in result_selectors:
+                blocks = d.find_elements(By.CSS_SELECTOR, selector)
+                for block in blocks:
+                    if len(found) >= max_results: break
+                    try:
+                        link_el = block.find_elements(By.CSS_SELECTOR, "a[href^='http']")
+                        if not link_el: continue
+                        href = link_el[0].get_attribute("href") or ""
+                        if not href.startswith("http") or "google.com" in href or href in seen: continue
+                        seen.add(href)
+                        title_el = block.find_elements(By.CSS_SELECTOR, "h3")
+                        title = title_el[0].text.strip() if title_el else ""
+                        snippet_el = block.find_elements(By.CSS_SELECTOR, "div[data-sncf], span[data-sncf], .VwiC3b, div.IsZvec")
+                        snippet = snippet_el[0].text.strip() if snippet_el else ""
+                        found.append({"title": title, "link": href, "snippet": snippet})
+                    except Exception: continue
+            return found
 
-        # Main result containers (organic results)
-        # Google uses div with data-hveid or g class for result blocks
-        result_selectors = [
-            "div.g",  # Classic organic result block
-            "div[data-hveid]",
-        ]
-
-        seen_links = set()
-        for selector in result_selectors:
-            blocks = driver.find_elements(By.CSS_SELECTOR, selector)
-            for block in blocks:
-                if len(results) >= max_results:
-                    break
-                try:
-                    # Link
-                    link_el = block.find_elements(By.CSS_SELECTOR, "a[href^='http']")
-                    if not link_el:
-                        continue
-                    href = link_el[0].get_attribute("href") or ""
-                    # Skip Google redirect and non-http
-                    if not href.startswith("http") or "google.com" in href:
-                        continue
-                    if href in seen_links:
-                        continue
-                    seen_links.add(href)
-
-                    # Title (often in h3)
-                    title_el = block.find_elements(By.CSS_SELECTOR, "h3")
-                    title = title_el[0].text.strip() if title_el else ""
-
-                    # Snippet
-                    snippet_el = block.find_elements(
-                        By.CSS_SELECTOR,
-                        "div[data-sncf], span[data-sncf], .VwiC3b, div.IsZvec",
-                    )
-                    snippet = snippet_el[0].text.strip() if snippet_el else ""
-
-                    results.append({
-                        "title": title,
-                        "link": href,
-                        "snippet": snippet,
-                    })
-                except Exception:
-                    continue
-            if len(results) >= max_results:
-                break
+        results = extract_from_page(driver)
+        
+        # Fallback 1: Try rotation to Mobile UA if zero results (often avoids bot detection)
+        if not results and own_driver:
+            print("  [Google] No results found on Desktop view. Retrying with Mobile User Agent...")
+            driver.quit()
+            driver = make_chrome_driver(headless=headless if headless is not None else CHROME_HEADLESS, user_agent=_MOBILE_USER_AGENT)
+            driver.get(url)
+            time.sleep(SCROLL_PAUSE_SECONDS + 1)
+            results = extract_from_page(driver)
 
         if not results:
-            print(f"  [Google] No results found with primary selectors. Title: {driver.title}")
-            # Check for CAPTCHA
+            # Remaining logic for logging and screenshot...
+            print(f"  [Google] Final attempt: No results found. Title: {driver.title}")
             if "captcha" in driver.page_source.lower() or "not a robot" in driver.page_source.lower():
                 print("  [Google] CAPTCHA detected!")
-            
-            # Save debug screenshot in Railway (base_dir should be /app in docker)
             try:
                 debug_path = os.path.join(_ROOT, "google_search_debug.png")
                 driver.save_screenshot(debug_path)
                 print(f"  [Google] Saved debug screenshot to {debug_path}")
-            except Exception as eSnapshot:
-                print(f"  [Google] Failed to save debug screenshot: {eSnapshot}")
+            except Exception: pass
 
         # Fallback: any visible links in main content area
         if len(results) < max_results:
