@@ -43,7 +43,7 @@ def get_chrome_binary():
 BASE_DIR = os.path.dirname(__file__)
 COOKIE_FILE = os.path.join(BASE_DIR, "ig_cookies.pkl")
 # Use persistent profile directory (not temp) so cookies persist
-CHROME_PROFILE_DIR = r"C:\selenium_instagram_profile"
+CHROME_PROFILE_DIR = os.environ.get("CHROME_PROFILE_DIR", os.path.join(BASE_DIR, "chrome_profile_ig"))
 
 # ================= COOKIE MANAGEMENT (OPTIONAL - NOT USED FOR LOGIN) =================
 # Cookies are saved after successful login as an optimization, but login always uses username/password

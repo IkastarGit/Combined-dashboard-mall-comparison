@@ -75,7 +75,12 @@ def make_chrome_options(
         opts.add_argument("--headless")
 
     # --- Writable user-data directory ---
-    chrome_user_data = os.environ.get("CHROME_USER_DATA_DIR", "/tmp/chrome-user-data")
+    # In Railway, we prefer a persistent volume if available (usually /data)
+    default_user_data = "/tmp/chrome-user-data"
+    if os.path.exists("/data") and os.access("/data", os.W_OK):
+        default_user_data = "/data/chrome-user-data"
+        
+    chrome_user_data = os.environ.get("CHROME_USER_DATA_DIR", default_user_data)
     os.makedirs(chrome_user_data, exist_ok=True)
     opts.add_argument(f"--user-data-dir={chrome_user_data}")
 

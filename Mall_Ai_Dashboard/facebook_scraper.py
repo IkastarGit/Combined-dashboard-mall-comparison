@@ -51,7 +51,7 @@ POST_XPATH = "//*[@class='html-div xdj266r x14z9mp xat24cr x1lziwak xexx8yu xyri
 # Paths
 BASE_DIR = os.path.dirname(__file__)
 COOKIE_FILE = os.path.join(BASE_DIR, "fb_cookies.pkl")
-CHROME_PROFILE_DIR = r"C:\selenium_chrome_profile"
+CHROME_PROFILE_DIR = os.environ.get("CHROME_PROFILE_DIR", os.path.join(BASE_DIR, "chrome_profile_fb"))
 
 # Cache for CSS order maps (keyed by page URL to avoid re-parsing)
 _css_order_cache = {}
