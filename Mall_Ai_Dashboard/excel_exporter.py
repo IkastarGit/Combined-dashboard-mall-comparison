@@ -103,6 +103,32 @@ def create_mall_excel_export(
             import traceback
             traceback.print_exc()
     
+    # Also derive coming soon from scraped data: any shop whose name contains "(COMING SOON)" etc.
+    # so that Perfumania (COMING SOON), As Seen on TV (COMING SOON) etc. appear in the Coming Soon tab
+    if scraped_df is not None and not scraped_df.empty and "shop_name" in scraped_df.columns:
+        website_df = scraped_df
+        if "source" in scraped_df.columns:
+            website_df = scraped_df[
+                scraped_df["source"].astype(str).str.lower().str.contains("website", na=False)
+            ]
+        seen_normalized = {s.strip().lower() for s in coming_soon_shops}
+        for _, row in website_df.iterrows():
+            name = row.get("shop_name")
+            if pd.isna(name) or not isinstance(name, str):
+                continue
+            if "coming soon" not in name.lower() and "opening soon" not in name.lower():
+                continue
+            # Display name: strip common suffixes for the Coming Soon column
+            display = re.sub(r"\s*[\(\-\–]\s*(COMING\s+SOON|Coming\s+Soon|OPENING\s+SOON|Opening\s+Soon)\s*[\)]?\s*$", "", name, flags=re.IGNORECASE).strip()
+            if not display:
+                display = name.strip()
+            key = display.lower()
+            if key and key not in seen_normalized:
+                seen_normalized.add(key)
+                coming_soon_shops.append(display)
+        if len(coming_soon_shops) > 0:
+            print(f"Coming soon tab: {len(coming_soon_shops)} shop(s) (including from scraped list)")
+    
     # Fetch SERP news/blogs for mall (mall name + address from main UI)
     # Use same query style as terminal so Excel "Google SERP Scratch" matches: title-case mall name, full results.
     google_search_results = []
